@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hola-ollama"
+version = "0.0.1"
+authors = [
+  { name="k98kurz", email="k98kurz@gmail.com" },
+]
+description = "Extensible Ollama Harness for Robust Local Agents"
+readme = "readme.md"
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: ISC License (ISCL)",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "crossconfig == 0.0.8",
+  "flying-state-machines == 0.3.0",
+]
+
+[project.urls]
+"Homepage" = "https://pycelium.com"
+"Repository" = "https://github.com/k98kurz/hola"
+"Bug Tracker" = "https://github.com/k98kurz/hola/issues"
+
+[project.scripts]
+hola = "hola.cli:run"
+
+[project.optional-dependencies]
+docs = [
+  "autodox >= 0.1.16"
+]

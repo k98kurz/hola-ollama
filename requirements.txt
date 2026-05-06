@@ -1,0 +1,2 @@
+crossconfig==0.0.8
+flying-state-machines==0.3.0
