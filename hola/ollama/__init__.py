@@ -1,0 +1,3 @@
+"""
+Ollama integration for Hola.
+"""
