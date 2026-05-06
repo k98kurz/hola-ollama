@@ -35,3 +35,17 @@ hola = "hola.cli:run"
 docs = [
   "autodox >= 0.1.16"
 ]
+
+[tool.hatch.build.targets.wheel]
+exclude = [
+  ".github",
+  "tests",
+  "AGENTS.md",
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  ".github",
+  "tests",
+  "AGENTS.md",
+]

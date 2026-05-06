@@ -99,6 +99,20 @@ def _validate_args(
 
 def _type_to_schema(type_hint: Any) -> dict[str, Any]:
     """Convert Python type hint to JSON Schema."""
+    if isinstance(type_hint, UnionType):
+        types = getattr(type_hint, "__args__", ())
+        if type(None) in types:
+            non_none_types = [t for t in types if t is not type(None)]
+            if len(non_none_types) == 1:
+                base_schema = _type_to_schema(non_none_types[0])
+                base_schema["nullable"] = True
+                return base_schema
+            schemas = [_type_to_schema(t) for t in non_none_types]
+            return {"anyOf": schemas, "nullable": True}
+
+        schemas = [_type_to_schema(t) for t in types]
+        return {"anyOf": schemas}
+
     origin = getattr(type_hint, "__origin__", None)
 
     if origin is None:
@@ -126,20 +140,6 @@ def _type_to_schema(type_hint: Any) -> dict[str, Any]:
             "type": "object",
             "additionalProperties": _type_to_schema(value_type),
         }
-
-    if origin is UnionType:
-        types = getattr(type_hint, "__args__", ())
-        if type(None) in types:
-            non_none_types = [t for t in types if t is not type(None)]
-            if len(non_none_types) == 1:
-                base_schema = _type_to_schema(non_none_types[0])
-                base_schema["nullable"] = True
-                return base_schema
-            schemas = [_type_to_schema(t) for t in non_none_types]
-            return {"anyOf": schemas, "nullable": True}
-
-        schemas = [_type_to_schema(t) for t in types]
-        return {"anyOf": schemas}
 
     return {"type": "object"}
 

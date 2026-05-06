@@ -5,6 +5,12 @@ source venv/bin/activate  # REQUIRED before all Python commands
 pip install -e .          # Install package for most manual testing
 ```
 
+# Testing Convention
+
+1. When writing ephemeral test code, use a minimum number of print statements to
+  conserve output tokens.
+2. When testing ollama anything, use granite4.1:3b as the model.
+
 # Code Style
 
 ## Line length

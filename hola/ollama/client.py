@@ -257,7 +257,11 @@ class OllamaClient:
 
         for attempt in range(self._config.max_retries):
             try:
-                await self._client.post("/api/chat", json=request_dict)
+                response = await self._client.post(
+                    "/api/chat",
+                    json=request_dict,
+                )
+                response.raise_for_status()
                 logger.info("Model %s loaded successfully", model)
                 return
 
@@ -315,7 +319,11 @@ class OllamaClient:
 
         for attempt in range(self._config.max_retries):
             try:
-                await self._client.post("/api/chat", json=request_dict)
+                response = await self._client.post(
+                    "/api/chat",
+                    json=request_dict,
+                )
+                response.raise_for_status()
                 logger.info("Model %s unloaded successfully", model)
                 return
 
