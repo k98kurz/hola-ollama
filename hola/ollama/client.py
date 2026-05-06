@@ -2,12 +2,12 @@
 Ollama HTTP client for API interactions.
 """
 
-from dataclasses import asdict, dataclass
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from typing import Self
 import asyncio
 import json
 import logging
-
 import httpx
 
 from hola.ollama.config import ClientConfig
@@ -18,6 +18,8 @@ from hola.ollama.types import (
     Message,
     ModelInfo,
     RunningModel,
+    ToolCall,
+    ToolCallFunction,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,7 +66,7 @@ class OllamaClient:
     async def chat(
             self,
             request: ChatRequest,
-        ) -> ChatResponseChunk:
+        ) -> AsyncGenerator[ChatResponseChunk, None]:
         """Primary streaming API - yields response chunks."""
         for attempt in range(self._config.max_retries):
             try:
@@ -514,10 +516,8 @@ class OllamaClient:
     def _parse_tool_calls(
             self,
             tool_calls_data: list[dict] | None,
-        ) -> list:
+        ) -> list[ToolCall] | None:
         """Parse tool calls from response data."""
-        from hola.ollama.types import ToolCall, ToolCallFunction
-
         if tool_calls_data is None:
             return None
 
