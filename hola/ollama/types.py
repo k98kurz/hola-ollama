@@ -2,7 +2,7 @@
 Core types for Ollama API compatibility.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 

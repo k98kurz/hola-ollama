@@ -111,7 +111,7 @@ class ModelWarmer:
                 for model, priority in self._warm_models.items():
                     interval = self._config.ping_intervals.get(
                         priority.value,
-                        self._config.default_keep_alive,
+                        self._config.default_ping_interval,
                     )
                     models_to_ping.append((model, interval))
 

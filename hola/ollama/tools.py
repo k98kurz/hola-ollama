@@ -4,15 +4,14 @@ Tool system for function registration and execution.
 
 from types import UnionType
 from typing import Any, Callable
-import asyncio
-import inspect
-import logging
-
 from hola.ollama.types import (
     FunctionDefinition,
     ToolCall,
     ToolDefinition,
 )
+import asyncio
+import inspect
+import logging
 
 logger = logging.getLogger(__name__)
 
