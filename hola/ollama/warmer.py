@@ -3,13 +3,13 @@ Model warmer for keeping models loaded in memory.
 """
 
 from typing import Any, Self
+from hola.ollama.client import OllamaClient
+from hola.ollama.config import ModelPriority, WarmerConfig
+from hola.ollama.types import ChatRequest, GenerationOptions, Message
 import asyncio
 import logging
 import threading
 
-from hola.ollama.client import OllamaClient
-from hola.ollama.config import ModelPriority, WarmerConfig
-from hola.ollama.types import ChatRequest, GenerationOptions, Message
 
 logger = logging.getLogger(__name__)
 

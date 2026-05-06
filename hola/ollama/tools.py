@@ -4,6 +4,7 @@ Tool system for function registration and execution.
 
 from types import UnionType
 from typing import Any, Callable
+from hola.ollama.exceptions import ToolExecutionError
 from hola.ollama.types import (
     FunctionDefinition,
     ToolCall,
@@ -12,6 +13,7 @@ from hola.ollama.types import (
 import asyncio
 import inspect
 import logging
+
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,52 @@ def _generate_schema(func: Callable[..., Any]) -> dict[str, Any]:
         "properties": parameters,
         "required": required,
     }
+
+
+def _validate_args(
+        args: dict[str, Any],
+        schema: dict[str, Any],
+    ) -> None:
+    """Basic type checking for tool arguments against schema."""
+    properties = schema.get("properties", {})
+
+    for key, value in args.items():
+        if key not in properties:
+            logger.warning(
+                "Unknown argument %s provided for tool execution",
+                key,
+            )
+            continue
+
+        param_schema = properties[key]
+        expected_type = param_schema.get("type")
+
+        if expected_type is None:
+            continue
+
+        if expected_type == "string" and not isinstance(value, str):
+            raise ToolExecutionError(
+                f"Invalid type for argument `{key}`: expected "
+                f"string, got {type(value).__name__}"
+            )
+
+        if expected_type == "integer" and not isinstance(value, int):
+            raise ToolExecutionError(
+                f"Invalid type for argument `{key}`: expected "
+                f"integer, got {type(value).__name__}"
+            )
+
+        if expected_type == "number" and not isinstance(value, (int, float)):
+            raise ToolExecutionError(
+                f"Invalid type for argument `{key}`: expected "
+                f"number, got {type(value).__name__}"
+            )
+
+        if expected_type == "boolean" and not isinstance(value, bool):
+            raise ToolExecutionError(
+                f"Invalid type for argument `{key}`: expected "
+                f"boolean, got {type(value).__name__}"
+            )
 
 
 def _type_to_schema(type_hint: Any) -> dict[str, Any]:
@@ -128,9 +176,27 @@ class ToolRegistry:
         func = self._functions.get(name)
 
         if func is None:
-            raise ValueError(f"Tool not found: {name}")
+            raise ToolExecutionError(f"Tool not found: {name}")
 
         args = tool_call.function.arguments
+        tool_def = self._tools.get(name)
+
+        if tool_def is not None:
+            try:
+                _validate_args(args, tool_def.function.parameters)
+            except ToolExecutionError as e:
+                logger.error(
+                    "Argument validation failed for tool %s: %s",
+                    name,
+                    e,
+                )
+                raise
+
+        logger.debug(
+            "Executing tool %s with arguments: %s",
+            name,
+            args,
+        )
 
         try:
             if asyncio.iscoroutinefunction(func):
@@ -144,7 +210,9 @@ class ToolRegistry:
                 e,
                 exc_info=True,
             )
-            raise
+            raise ToolExecutionError(
+                f"Tool execution failed for {name}: {e}"
+            ) from e
 
         logger.debug("Tool %s executed successfully", name)
         return result

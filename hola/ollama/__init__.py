@@ -2,10 +2,13 @@
 Ollama integration for Hola.
 """
 
-from hola.ollama.client import (
-    OllamaClient,
+from hola.ollama.client import OllamaClient
+from hola.ollama.exceptions import (
     OllamaClientError,
     OllamaConnectionError,
+    OllamaModelError,
+    OllamaRequestError,
+    ToolExecutionError,
 )
 from hola.ollama.config import (
     ClientConfig,
@@ -39,6 +42,9 @@ __all__ = [
     "OllamaClient",
     "OllamaClientError",
     "OllamaConnectionError",
+    "OllamaModelError",
+    "OllamaRequestError",
+    "ToolExecutionError",
     "ClientConfig",
     "ModelPriority",
     "WarmerConfig",
