@@ -2,11 +2,11 @@
 Tool system for function registration and execution.
 """
 
+from types import UnionType
+from typing import Any, Callable
 import asyncio
 import inspect
 import logging
-from types import UnionType
-from typing import Any, Callable
 
 from hola.ollama.types import (
     FunctionDefinition,
@@ -103,28 +103,28 @@ class ToolRegistry:
         self._functions: dict[str, Callable[..., Any]] = {}
 
     def register_tool(
-        self,
-        tool: ToolDefinition,
-        func: Callable[..., Any],
-    ) -> None:
+            self,
+            tool: ToolDefinition,
+            func: Callable[..., Any],
+        ) -> None:
         self._tools[tool.function.name] = tool
         self._functions[tool.function.name] = func
 
     def get_tool(
-        self,
-        name: str,
-    ) -> ToolDefinition | None:
+            self,
+            name: str,
+        ) -> ToolDefinition | None:
         return self._tools.get(name)
 
     def list_tools(
-        self,
-    ) -> list[ToolDefinition]:
+            self,
+        ) -> list[ToolDefinition]:
         return list(self._tools.values())
 
     async def execute_tool_call(
-        self,
-        tool_call: ToolCall,
-    ) -> Any:
+            self,
+            tool_call: ToolCall,
+        ) -> Any:
         name = tool_call.function.name
         func = self._functions.get(name)
 

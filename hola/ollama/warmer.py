@@ -2,10 +2,10 @@
 Model warmer for keeping models loaded in memory.
 """
 
+from typing import Any, Self
 import asyncio
 import logging
 import threading
-from typing import Any, Self
 
 from hola.ollama.config import ModelPriority, WarmerConfig
 from hola.ollama.types import ChatRequest, GenerationOptions, Message
@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 class ModelWarmer:
     def __init__(
-        self,
-        client: Any,
-        config: WarmerConfig,
-    ) -> None:
+            self,
+            client: Any,
+            config: WarmerConfig,
+        ) -> None:
         self._client = client
         self._config = config
         self._warm_models: dict[str, ModelPriority] = {}
@@ -27,10 +27,10 @@ class ModelWarmer:
         self._lock = threading.Lock()
 
     def warm_model(
-        self,
-        model: str,
-        priority: ModelPriority = ModelPriority.NORMAL,
-    ) -> None:
+            self,
+            model: str,
+            priority: ModelPriority = ModelPriority.NORMAL,
+        ) -> None:
         """Mark model to keep warm."""
         with self._lock:
             self._warm_models[model] = priority
@@ -47,9 +47,9 @@ class ModelWarmer:
         asyncio.run(self._load_model(model, keep_alive))
 
     def unwarm_model(
-        self,
-        model: str,
-    ) -> None:
+            self,
+            model: str,
+        ) -> None:
         """Remove model from warming."""
         with self._lock:
             if model in self._warm_models:
@@ -86,16 +86,16 @@ class ModelWarmer:
         logger.info("Stopped background warming thread")
 
     def get_warm_models(
-        self,
-    ) -> list[str]:
+            self,
+        ) -> list[str]:
         """List currently warm models."""
         with self._lock:
             return list(self._warm_models.keys())
 
     def is_model_warm(
-        self,
-        model: str,
-    ) -> bool:
+            self,
+            model: str,
+        ) -> bool:
         """Check if model is warm."""
         with self._lock:
             return model in self._warm_models
@@ -141,10 +141,10 @@ class ModelWarmer:
             pass
 
     async def _load_model(
-        self,
-        model: str,
-        keep_alive: str,
-    ) -> None:
+            self,
+            model: str,
+            keep_alive: str,
+        ) -> None:
         """Trigger immediate model load."""
         await self._client.load_model(model, keep_alive)
 
@@ -153,9 +153,9 @@ class ModelWarmer:
         asyncio.run(self._background_ping_loop())
 
     def _get_keep_alive(
-        self,
-        priority: ModelPriority,
-    ) -> str:
+            self,
+            priority: ModelPriority,
+        ) -> str:
         """Get keep_alive duration based on priority."""
         if priority == ModelPriority.CRITICAL:
             return "24h"
@@ -169,10 +169,10 @@ class ModelWarmer:
         return self
 
     async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: Any,
-    ) -> None:
+            self,
+            exc_type: type[BaseException] | None,
+            exc_val: BaseException | None,
+            exc_tb: Any,
+        ) -> None:
         """Async context manager exit."""
         self.stop()
