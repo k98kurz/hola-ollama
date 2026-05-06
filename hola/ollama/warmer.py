@@ -1,0 +1,178 @@
+"""
+Model warmer for keeping models loaded in memory.
+"""
+
+import asyncio
+import logging
+import threading
+from typing import Any, Self
+
+from hola.ollama.config import ModelPriority, WarmerConfig
+from hola.ollama.types import ChatRequest, GenerationOptions, Message
+
+logger = logging.getLogger(__name__)
+
+
+class ModelWarmer:
+    def __init__(
+        self,
+        client: Any,
+        config: WarmerConfig,
+    ) -> None:
+        self._client = client
+        self._config = config
+        self._warm_models: dict[str, ModelPriority] = {}
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
+
+    def warm_model(
+        self,
+        model: str,
+        priority: ModelPriority = ModelPriority.NORMAL,
+    ) -> None:
+        """Mark model to keep warm."""
+        with self._lock:
+            self._warm_models[model] = priority
+
+        keep_alive = self._get_keep_alive(priority)
+
+        logger.info(
+            "Warming model %s with priority %s (keep_alive: %s)",
+            model,
+            priority.value,
+            keep_alive,
+        )
+
+        asyncio.run(self._load_model(model, keep_alive))
+
+    def unwarm_model(
+        self,
+        model: str,
+    ) -> None:
+        """Remove model from warming."""
+        with self._lock:
+            if model in self._warm_models:
+                del self._warm_models[model]
+
+        logger.info("Unwarming model %s", model)
+
+    def start(self) -> None:
+        """Start background warming thread."""
+        if self._thread is not None and self._thread.is_alive():
+            logger.warning("Background thread already running")
+            return
+
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run_background_loop,
+            daemon=True,
+        )
+        self._thread.start()
+        logger.info("Started background warming thread")
+
+    def stop(self) -> None:
+        """Stop background warming thread."""
+        if self._thread is None or not self._thread.is_alive():
+            return
+
+        self._stop_event.set()
+        self._thread.join(timeout=5.0)
+
+        if self._thread.is_alive():
+            logger.warning("Background thread did not stop gracefully")
+
+        self._thread = None
+        logger.info("Stopped background warming thread")
+
+    def get_warm_models(
+        self,
+    ) -> list[str]:
+        """List currently warm models."""
+        with self._lock:
+            return list(self._warm_models.keys())
+
+    def is_model_warm(
+        self,
+        model: str,
+    ) -> bool:
+        """Check if model is warm."""
+        with self._lock:
+            return model in self._warm_models
+
+    async def _background_ping_loop(self) -> None:
+        """Background loop for pinging models."""
+        logger.info("Background ping loop started")
+
+        while not self._stop_event.is_set():
+            models_to_ping = []
+
+            with self._lock:
+                for model, priority in self._warm_models.items():
+                    interval = self._config.ping_intervals.get(
+                        priority.value,
+                        self._config.default_keep_alive,
+                    )
+                    models_to_ping.append((model, interval))
+
+            for model, interval in models_to_ping:
+                if self._stop_event.is_set():
+                    break
+
+                try:
+                    await self._ping_model(model)
+                except Exception as e:
+                    logger.error("Error pinging model %s: %s", model, e)
+
+                await asyncio.sleep(interval)
+
+        logger.info("Background ping loop stopped")
+
+    async def _ping_model(self, model: str) -> None:
+        """Send 1-token request to keep model loaded."""
+        request = ChatRequest(
+            model=model,
+            messages=[Message(role="user", content="Hi")],
+            options=GenerationOptions(num_predict=1),
+            keep_alive=self._config.default_keep_alive,
+        )
+
+        async for _ in self._client.chat(request):
+            pass
+
+    async def _load_model(
+        self,
+        model: str,
+        keep_alive: str,
+    ) -> None:
+        """Trigger immediate model load."""
+        await self._client.load_model(model, keep_alive)
+
+    def _run_background_loop(self) -> None:
+        """Run the background loop in a thread."""
+        asyncio.run(self._background_ping_loop())
+
+    def _get_keep_alive(
+        self,
+        priority: ModelPriority,
+    ) -> str:
+        """Get keep_alive duration based on priority."""
+        if priority == ModelPriority.CRITICAL:
+            return "24h"
+        if priority == ModelPriority.NORMAL:
+            return "4h"
+        return "1h"
+
+    async def __aenter__(self) -> Self:
+        """Async context manager entry."""
+        self.start()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        """Async context manager exit."""
+        self.stop()
