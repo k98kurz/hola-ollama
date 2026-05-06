@@ -327,3 +327,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
+
+
+if __name__ == "__main__":
+    unittest.main()

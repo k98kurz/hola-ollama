@@ -29,7 +29,7 @@ dependencies = [
 "Bug Tracker" = "https://github.com/k98kurz/hola/issues"
 
 [project.scripts]
-hola = "hola.cli:run"
+hola = "hola.cli:main"
 
 [project.optional-dependencies]
 docs = [
@@ -37,6 +37,7 @@ docs = [
 ]
 
 [tool.hatch.build.targets.wheel]
+packages = ["hola"]
 exclude = [
   ".github",
   "tests",

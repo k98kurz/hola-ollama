@@ -224,3 +224,7 @@ class TestWarmer(unittest.TestCase):
                 self.warmer._warm_models[model_name],
                 ModelPriority.NORMAL,
             )
+
+
+if __name__ == "__main__":
+    unittest.main()

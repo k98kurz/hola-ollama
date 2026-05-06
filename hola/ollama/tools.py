@@ -208,7 +208,6 @@ class ToolRegistry:
                 "Error executing tool %s: %s",
                 name,
                 e,
-                exc_info=True,
             )
             raise ToolExecutionError(
                 f"Tool execution failed for {name}: {e}"
