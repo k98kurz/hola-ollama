@@ -7,6 +7,7 @@ import asyncio
 import logging
 import threading
 
+from hola.ollama.client import OllamaClient
 from hola.ollama.config import ModelPriority, WarmerConfig
 from hola.ollama.types import ChatRequest, GenerationOptions, Message
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ModelWarmer:
     def __init__(
             self,
-            client: Any,
+            client: OllamaClient,
             config: WarmerConfig,
         ) -> None:
         self._client = client
