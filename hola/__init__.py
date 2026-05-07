@@ -27,3 +27,18 @@ from hola.ollama import (
     OllamaModelError,
     ToolExecutionError,
 )
+from hola.session import (
+    Session,
+    SessionAlreadyExistsError,
+    SessionDeleteError,
+    SessionError,
+    SessionLoadError,
+    SessionNotFoundError,
+    SessionSaveError,
+    SessionState,
+    create_session,
+    delete_session,
+    get_session,
+    list_sessions,
+    session_exists,
+)
