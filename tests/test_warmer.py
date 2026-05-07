@@ -20,6 +20,11 @@ class TestWarmer(unittest.TestCase):
         self.config = WarmerConfig()
         self.mock_client = Mock(spec=OllamaClient)
         self.mock_client.load_model = AsyncMock()
+
+        async def mock_chat(request):
+            yield
+
+        self.mock_client.chat = mock_chat
         self.warmer = ModelWarmer(self.mock_client, self.config)
 
     def tearDown(self):
@@ -42,52 +47,52 @@ class TestWarmer(unittest.TestCase):
 
     def test_warm_model(self):
         """Test warming a model."""
-        self.warmer.warm_model("llama3", ModelPriority.NORMAL)
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
 
-        assert "llama3" in self.warmer._warm_models, (
+        assert "qwen3:0.6b" in self.warmer._warm_models, (
             list(self.warmer._warm_models.keys()),
         )
-        assert self.warmer._warm_models["llama3"] == ModelPriority.NORMAL, (
-            self.warmer._warm_models["llama3"],
+        assert self.warmer._warm_models["qwen3:0.6b"] == ModelPriority.NORMAL, (
+            self.warmer._warm_models["qwen3:0.6b"],
             ModelPriority.NORMAL,
         )
         self.mock_client.load_model.assert_called_once_with(
-            "llama3",
+            "qwen3:0.6b",
             "4h",
         )
 
     def test_warm_model_critical_priority(self):
         """Test warming a model with CRITICAL priority."""
-        self.warmer.warm_model("llama3", ModelPriority.CRITICAL)
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.CRITICAL)
 
-        assert self.warmer._warm_models["llama3"] == ModelPriority.CRITICAL, (
-            self.warmer._warm_models["llama3"],
+        assert self.warmer._warm_models["qwen3:0.6b"] == ModelPriority.CRITICAL, (
+            self.warmer._warm_models["qwen3:0.6b"],
             ModelPriority.CRITICAL,
         )
         self.mock_client.load_model.assert_called_once_with(
-            "llama3",
+            "qwen3:0.6b",
             "24h",
         )
 
     def test_warm_model_low_priority(self):
         """Test warming a model with LOW priority."""
-        self.warmer.warm_model("llama3", ModelPriority.LOW)
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.LOW)
 
-        assert self.warmer._warm_models["llama3"] == ModelPriority.LOW, (
-            self.warmer._warm_models["llama3"],
+        assert self.warmer._warm_models["qwen3:0.6b"] == ModelPriority.LOW, (
+            self.warmer._warm_models["qwen3:0.6b"],
             ModelPriority.LOW,
         )
         self.mock_client.load_model.assert_called_once_with(
-            "llama3",
+            "qwen3:0.6b",
             "1h",
         )
 
     def test_unwarm_model(self):
         """Test unwarming a model."""
-        self.warmer.warm_model("llama3", ModelPriority.NORMAL)
-        self.warmer.unwarm_model("llama3")
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
+        self.warmer.unwarm_model("qwen3:0.6b")
 
-        assert "llama3" not in self.warmer._warm_models, (
+        assert "qwen3:0.6b" not in self.warmer._warm_models, (
             list(self.warmer._warm_models.keys()),
         )
 
@@ -99,44 +104,44 @@ class TestWarmer(unittest.TestCase):
 
     def test_priority_tracking(self):
         """Test tracking multiple models with different priorities."""
-        self.warmer.warm_model("llama3", ModelPriority.CRITICAL)
-        self.warmer.warm_model("mistral", ModelPriority.NORMAL)
-        self.warmer.warm_model("tiny", ModelPriority.LOW)
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.CRITICAL)
+        self.warmer.warm_model("gemma3:1b", ModelPriority.NORMAL)
+        self.warmer.warm_model("tinyllama", ModelPriority.LOW)
 
         assert len(self.warmer._warm_models) == 3, len(self.warmer._warm_models)
-        assert self.warmer._warm_models["llama3"] == ModelPriority.CRITICAL, (
-            self.warmer._warm_models["llama3"],
+        assert self.warmer._warm_models["qwen3:0.6b"] == ModelPriority.CRITICAL, (
+            self.warmer._warm_models["qwen3:0.6b"],
             ModelPriority.CRITICAL,
         )
-        assert self.warmer._warm_models["mistral"] == ModelPriority.NORMAL, (
-            self.warmer._warm_models["mistral"],
+        assert self.warmer._warm_models["gemma3:1b"] == ModelPriority.NORMAL, (
+            self.warmer._warm_models["gemma3:1b"],
             ModelPriority.NORMAL,
         )
-        assert self.warmer._warm_models["tiny"] == ModelPriority.LOW, (
-            self.warmer._warm_models["tiny"],
+        assert self.warmer._warm_models["tinyllama"] == ModelPriority.LOW, (
+            self.warmer._warm_models["tinyllama"],
             ModelPriority.LOW,
         )
 
     def test_get_warm_models(self):
         """Test getting list of warm models."""
-        self.warmer.warm_model("llama3", ModelPriority.NORMAL)
-        self.warmer.warm_model("mistral", ModelPriority.CRITICAL)
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
+        self.warmer.warm_model("gemma3:1b", ModelPriority.CRITICAL)
 
         warm_models = self.warmer.get_warm_models()
 
         assert len(warm_models) == 2, len(warm_models)
-        assert "llama3" in warm_models, warm_models
-        assert "mistral" in warm_models, warm_models
+        assert "qwen3:0.6b" in warm_models, warm_models
+        assert "gemma3:1b" in warm_models, warm_models
 
     def test_is_model_warm(self):
         """Test checking if model is warm."""
-        self.warmer.warm_model("llama3", ModelPriority.NORMAL)
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
 
-        assert self.warmer.is_model_warm("llama3"), self.warmer.is_model_warm(
-            "llama3",
+        assert self.warmer.is_model_warm("qwen3:0.6b"), self.warmer.is_model_warm(
+            "qwen3:0.6b",
         )
-        assert not self.warmer.is_model_warm("mistral"), (
-            self.warmer.is_model_warm("mistral"),
+        assert not self.warmer.is_model_warm("gemma3:1b"), (
+            self.warmer.is_model_warm("gemma3:1b"),
         )
 
     def test_background_loop_start_stop(self):
@@ -188,7 +193,7 @@ class TestWarmer(unittest.TestCase):
 
     def test_graceful_shutdown(self):
         """Test graceful shutdown of warmer."""
-        self.warmer.warm_model("llama3", ModelPriority.NORMAL)
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
         self.warmer.start()
 
         time.sleep(0.1)
@@ -213,13 +218,12 @@ class TestWarmer(unittest.TestCase):
 
     def test_multiple_models_same_priority(self):
         """Test warming multiple models with same priority."""
-        self.warmer.warm_model("llama3", ModelPriority.NORMAL)
-        self.warmer.warm_model("mistral", ModelPriority.NORMAL)
-        self.warmer.warm_model("gemma", ModelPriority.NORMAL)
+        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
+        self.warmer.warm_model("gemma3:1b", ModelPriority.NORMAL)
 
-        assert len(self.warmer._warm_models) == 3, len(self.warmer._warm_models)
+        assert len(self.warmer._warm_models) == 2, len(self.warmer._warm_models)
 
-        for model_name in ["llama3", "mistral", "gemma"]:
+        for model_name in ["qwen3:0.6b", "gemma3:1b"]:
             assert self.warmer._warm_models[model_name] == ModelPriority.NORMAL, (
                 self.warmer._warm_models[model_name],
                 ModelPriority.NORMAL,
