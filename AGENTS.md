@@ -123,3 +123,9 @@ import os # stdlib
 import packify # external package
 ```
 
+## Exports
+
+- Do NOT use `__all__ = [...]`.
+- Only import into an `__init__.py` what is expected to be exported for that module
+- If something has to be imported and used temporarily within an `__init__.py` file,
+  use `del Thing` at the end of the file

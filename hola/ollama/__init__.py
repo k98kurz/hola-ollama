@@ -12,7 +12,6 @@ from hola.ollama.exceptions import (
 )
 from hola.ollama.config import (
     ClientConfig,
-    ModelPriority,
     WarmerConfig,
 )
 from hola.ollama.types import (
@@ -46,7 +45,6 @@ __all__ = [
     "OllamaRequestError",
     "ToolExecutionError",
     "ClientConfig",
-    "ModelPriority",
     "WarmerConfig",
     "ChatRequest",
     "ChatResponse",

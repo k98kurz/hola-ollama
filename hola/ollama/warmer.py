@@ -2,13 +2,14 @@
 Model warmer for keeping models loaded in memory.
 """
 
-from typing import Any, Self
+from typing import Self
 from hola.ollama.client import OllamaClient
-from hola.ollama.config import ModelPriority, WarmerConfig
+from hola.ollama.config import WarmerConfig
 from hola.ollama.types import ChatRequest, GenerationOptions, Message
 import asyncio
 import logging
 import threading
+import time
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class ModelWarmer:
         ) -> None:
         self._client = client
         self._config = config
-        self._warm_models: dict[str, ModelPriority] = {}
+        self._model_timers: dict[str, float] = {}
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -30,22 +31,20 @@ class ModelWarmer:
     def warm_model(
             self,
             model: str,
-            priority: ModelPriority = ModelPriority.NORMAL,
         ) -> None:
         """Mark model to keep warm."""
         with self._lock:
-            self._warm_models[model] = priority
-
-        keep_alive = self._get_keep_alive(priority)
+            self._model_timers[model] = (
+                time.time() + self._config.ping_interval_seconds
+            )
 
         logger.info(
-            "Warming model %s with priority %s (keep_alive: %s)",
+            "Warming model %s (ping_interval: %ds)",
             model,
-            priority.value,
-            keep_alive,
+            self._config.ping_interval_seconds,
         )
 
-        asyncio.run(self._load_model(model, keep_alive))
+        asyncio.run(self._load_model(model))
 
     def unwarm_model(
             self,
@@ -53,10 +52,25 @@ class ModelWarmer:
         ) -> None:
         """Remove model from warming."""
         with self._lock:
-            if model in self._warm_models:
-                del self._warm_models[model]
+            if model in self._model_timers:
+                del self._model_timers[model]
 
         logger.info("Unwarming model %s", model)
+
+    def signal_model_used(
+            self,
+            model: str,
+        ) -> None:
+        """Reset timer for model that was just used."""
+        with self._lock:
+            if model not in self._model_timers:
+                return
+
+            self._model_timers[model] = (
+                time.time() + self._config.ping_interval_seconds
+            )
+
+        logger.debug("Reset timer for model %s", model)
 
     def start(self) -> None:
         """Start background warming thread."""
@@ -83,6 +97,9 @@ class ModelWarmer:
         if self._thread.is_alive():
             logger.warning("Background thread did not stop gracefully")
 
+        with self._lock:
+            self._model_timers.clear()
+
         self._thread = None
         logger.info("Stopped background warming thread")
 
@@ -91,7 +108,7 @@ class ModelWarmer:
         ) -> list[str]:
         """List currently warm models."""
         with self._lock:
-            return list(self._warm_models.keys())
+            return list(self._model_timers.keys())
 
     def is_model_warm(
             self,
@@ -99,33 +116,38 @@ class ModelWarmer:
         ) -> bool:
         """Check if model is warm."""
         with self._lock:
-            return model in self._warm_models
+            return model in self._model_timers
 
     async def _background_ping_loop(self) -> None:
         """Background loop for pinging models."""
         logger.info("Background ping loop started")
 
         while not self._stop_event.is_set():
+            current_time = time.time()
             models_to_ping = []
 
             with self._lock:
-                for model, priority in self._warm_models.items():
-                    interval = self._config.ping_intervals.get(
-                        priority.value,
-                        self._config.default_ping_interval,
-                    )
-                    models_to_ping.append((model, interval))
+                for model, next_ping_time in self._model_timers.items():
+                    if current_time >= next_ping_time:
+                        models_to_ping.append(model)
 
-            for model, interval in models_to_ping:
+            for model in models_to_ping:
                 if self._stop_event.is_set():
                     break
 
                 try:
                     await self._ping_model(model)
+
+                    with self._lock:
+                        if model in self._model_timers:
+                            self._model_timers[model] = (
+                                time.time() + self._config.ping_interval_seconds
+                            )
+
                 except Exception as e:
                     logger.error("Error pinging model %s: %s", model, e)
 
-                await asyncio.sleep(interval)
+            await asyncio.sleep(self._config.check_interval_seconds)
 
         logger.info("Background ping loop stopped")
 
@@ -144,25 +166,13 @@ class ModelWarmer:
     async def _load_model(
             self,
             model: str,
-            keep_alive: str,
         ) -> None:
         """Trigger immediate model load."""
-        await self._client.load_model(model, keep_alive)
+        await self._client.load_model(model, self._config.default_keep_alive)
 
     def _run_background_loop(self) -> None:
         """Run the background loop in a thread."""
         asyncio.run(self._background_ping_loop())
-
-    def _get_keep_alive(
-            self,
-            priority: ModelPriority,
-        ) -> str:
-        """Get keep_alive duration based on priority."""
-        if priority == ModelPriority.CRITICAL:
-            return "24h"
-        if priority == ModelPriority.NORMAL:
-            return "4h"
-        return "1h"
 
     async def __aenter__(self) -> Self:
         """Async context manager entry."""
@@ -173,7 +183,7 @@ class ModelWarmer:
             self,
             exc_type: type[BaseException] | None,
             exc_val: BaseException | None,
-            exc_tb: Any,
+            exc_tb,
         ) -> None:
         """Async context manager exit."""
         self.stop()

@@ -21,7 +21,6 @@ from hola.ollama import (
     RunningModel,
     ClientConfig,
     WarmerConfig,
-    ModelPriority,
     OllamaClientError,
     OllamaConnectionError,
     OllamaRequestError,

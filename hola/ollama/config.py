@@ -2,14 +2,7 @@
 Configuration classes for the Ollama client and model warmer.
 """
 
-from dataclasses import dataclass, field
-from enum import Enum
-
-
-class ModelPriority(Enum):
-    CRITICAL = "CRITICAL"
-    NORMAL = "NORMAL"
-    LOW = "LOW"
+from dataclasses import dataclass
 
 
 @dataclass
@@ -23,12 +16,6 @@ class ClientConfig:
 @dataclass
 class WarmerConfig:
     default_keep_alive: str = "4h"
-    default_ping_interval: float = 300.0
-    ping_intervals: dict[str, float] = field(
-        default_factory=lambda: {
-            "CRITICAL": 120.0,
-            "NORMAL": 300.0,
-            "LOW": 600.0,
-        }
-    )
+    ping_interval_seconds: int = 120
+    check_interval_seconds: int = 1
     enable_background_ping: bool = True

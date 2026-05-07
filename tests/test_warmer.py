@@ -8,7 +8,7 @@ import time
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 import unittest
 from hola.ollama.warmer import ModelWarmer
-from hola.ollama.config import WarmerConfig, ModelPriority
+from hola.ollama.config import WarmerConfig
 from hola.ollama.client import OllamaClient
 
 
@@ -17,7 +17,7 @@ class TestWarmer(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.config = WarmerConfig()
+        self.config = WarmerConfig(ping_interval_seconds=120, check_interval_seconds=1)
         self.mock_client = Mock(spec=OllamaClient)
         self.mock_client.load_model = AsyncMock()
 
@@ -42,90 +42,50 @@ class TestWarmer(unittest.TestCase):
             self.warmer._config,
             self.config,
         )
-        assert len(self.warmer._warm_models) == 0, len(self.warmer._warm_models)
+        assert len(self.warmer._model_timers) == 0, len(self.warmer._model_timers)
         assert self.warmer._thread is None, self.warmer._thread
 
     def test_warm_model(self):
         """Test warming a model."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
+        self.warmer.warm_model("qwen3:0.6b")
 
-        assert "qwen3:0.6b" in self.warmer._warm_models, (
-            list(self.warmer._warm_models.keys()),
-        )
-        assert self.warmer._warm_models["qwen3:0.6b"] == ModelPriority.NORMAL, (
-            self.warmer._warm_models["qwen3:0.6b"],
-            ModelPriority.NORMAL,
+        assert "qwen3:0.6b" in self.warmer._model_timers, (
+            list(self.warmer._model_timers.keys()),
         )
         self.mock_client.load_model.assert_called_once_with(
             "qwen3:0.6b",
             "4h",
         )
 
-    def test_warm_model_critical_priority(self):
-        """Test warming a model with CRITICAL priority."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.CRITICAL)
-
-        assert self.warmer._warm_models["qwen3:0.6b"] == ModelPriority.CRITICAL, (
-            self.warmer._warm_models["qwen3:0.6b"],
-            ModelPriority.CRITICAL,
-        )
-        self.mock_client.load_model.assert_called_once_with(
-            "qwen3:0.6b",
-            "24h",
-        )
-
-    def test_warm_model_low_priority(self):
-        """Test warming a model with LOW priority."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.LOW)
-
-        assert self.warmer._warm_models["qwen3:0.6b"] == ModelPriority.LOW, (
-            self.warmer._warm_models["qwen3:0.6b"],
-            ModelPriority.LOW,
-        )
-        self.mock_client.load_model.assert_called_once_with(
-            "qwen3:0.6b",
-            "1h",
-        )
-
     def test_unwarm_model(self):
         """Test unwarming a model."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
+        self.warmer.warm_model("qwen3:0.6b")
         self.warmer.unwarm_model("qwen3:0.6b")
 
-        assert "qwen3:0.6b" not in self.warmer._warm_models, (
-            list(self.warmer._warm_models.keys()),
+        assert "qwen3:0.6b" not in self.warmer._model_timers, (
+            list(self.warmer._model_timers.keys()),
         )
 
     def test_unwarm_nonexistent_model(self):
         """Test unwarming a non-existent model."""
         self.warmer.unwarm_model("nonexistent")
 
-        assert len(self.warmer._warm_models) == 0, len(self.warmer._warm_models)
+        assert len(self.warmer._model_timers) == 0, len(self.warmer._model_timers)
 
-    def test_priority_tracking(self):
-        """Test tracking multiple models with different priorities."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.CRITICAL)
-        self.warmer.warm_model("gemma3:1b", ModelPriority.NORMAL)
-        self.warmer.warm_model("tinyllama", ModelPriority.LOW)
+    def test_multiple_models(self):
+        """Test tracking multiple models."""
+        self.warmer.warm_model("qwen3:0.6b")
+        self.warmer.warm_model("gemma3:1b")
+        self.warmer.warm_model("tinyllama")
 
-        assert len(self.warmer._warm_models) == 3, len(self.warmer._warm_models)
-        assert self.warmer._warm_models["qwen3:0.6b"] == ModelPriority.CRITICAL, (
-            self.warmer._warm_models["qwen3:0.6b"],
-            ModelPriority.CRITICAL,
-        )
-        assert self.warmer._warm_models["gemma3:1b"] == ModelPriority.NORMAL, (
-            self.warmer._warm_models["gemma3:1b"],
-            ModelPriority.NORMAL,
-        )
-        assert self.warmer._warm_models["tinyllama"] == ModelPriority.LOW, (
-            self.warmer._warm_models["tinyllama"],
-            ModelPriority.LOW,
-        )
+        assert len(self.warmer._model_timers) == 3, len(self.warmer._model_timers)
+        for model_name in ["qwen3:0.6b", "gemma3:1b", "tinyllama"]:
+            assert model_name in self.warmer._model_timers, model_name
 
     def test_get_warm_models(self):
         """Test getting list of warm models."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
-        self.warmer.warm_model("gemma3:1b", ModelPriority.CRITICAL)
+        self.warmer.warm_model("qwen3:0.6b")
+        self.warmer.warm_model("gemma3:1b")
 
         warm_models = self.warmer.get_warm_models()
 
@@ -135,7 +95,7 @@ class TestWarmer(unittest.TestCase):
 
     def test_is_model_warm(self):
         """Test checking if model is warm."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
+        self.warmer.warm_model("qwen3:0.6b")
 
         assert self.warmer.is_model_warm("qwen3:0.6b"), self.warmer.is_model_warm(
             "qwen3:0.6b",
@@ -171,29 +131,9 @@ class TestWarmer(unittest.TestCase):
 
         self.warmer.stop()
 
-    def test_ping_interval_critical(self):
-        """Test ping interval for CRITICAL priority."""
-        interval = self.config.ping_intervals.get("CRITICAL")
-        assert interval == 120.0, (interval, 120.0)
-
-    def test_ping_interval_normal(self):
-        """Test ping interval for NORMAL priority."""
-        interval = self.config.ping_intervals.get("NORMAL")
-        assert interval == 300.0, (interval, 300.0)
-
-    def test_ping_interval_low(self):
-        """Test ping interval for LOW priority."""
-        interval = self.config.ping_intervals.get("LOW")
-        assert interval == 600.0, (interval, 600.0)
-
-    def test_ping_interval_default(self):
-        """Test default ping interval."""
-        interval = self.config.default_ping_interval
-        assert interval == 300.0, (interval, 300.0)
-
     def test_graceful_shutdown(self):
         """Test graceful shutdown of warmer."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
+        self.warmer.warm_model("qwen3:0.6b")
         self.warmer.start()
 
         time.sleep(0.1)
@@ -216,18 +156,37 @@ class TestWarmer(unittest.TestCase):
 
             mock_join.assert_called_once_with(timeout=5.0)
 
-    def test_multiple_models_same_priority(self):
-        """Test warming multiple models with same priority."""
-        self.warmer.warm_model("qwen3:0.6b", ModelPriority.NORMAL)
-        self.warmer.warm_model("gemma3:1b", ModelPriority.NORMAL)
+    def test_signal_model_used_warmed_model(self):
+        """Test signaling that a warmed model was just used."""
+        self.warmer.warm_model("qwen3:0.6b")
+        initial_timer = self.warmer._model_timers["qwen3:0.6b"]
 
-        assert len(self.warmer._warm_models) == 2, len(self.warmer._warm_models)
+        time.sleep(0.1)
+        self.warmer.signal_model_used("qwen3:0.6b")
 
-        for model_name in ["qwen3:0.6b", "gemma3:1b"]:
-            assert self.warmer._warm_models[model_name] == ModelPriority.NORMAL, (
-                self.warmer._warm_models[model_name],
-                ModelPriority.NORMAL,
-            )
+        new_timer = self.warmer._model_timers["qwen3:0.6b"]
+
+        assert new_timer > initial_timer, (new_timer, initial_timer)
+
+    def test_signal_model_used_non_warmed_model(self):
+        """Test signaling that a non-warmed model was just used."""
+        self.warmer.signal_model_used("nonexistent")
+
+        assert "nonexistent" not in self.warmer._model_timers, (
+            list(self.warmer._model_timers.keys()),
+        )
+
+    def test_signal_prevents_unnecessary_ping(self):
+        """Test that signaling prevents immediate ping."""
+        self.warmer.warm_model("qwen3:0.6b")
+        self.warmer.start()
+
+        time.sleep(0.1)
+        self.warmer.signal_model_used("qwen3:0.6b")
+
+        time.sleep(0.1)
+
+        self.warmer.stop()
 
 
 if __name__ == "__main__":
