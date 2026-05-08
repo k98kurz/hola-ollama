@@ -14,6 +14,7 @@ from hola.session.manager import (
     create_session,
     delete_session,
     get_session,
+    initialize,
     list_sessions,
     session_exists,
 )

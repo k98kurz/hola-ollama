@@ -9,3 +9,5 @@ temp/
 **.sw?
 tickets/
 **plan**.md
+**.db
+.hola/

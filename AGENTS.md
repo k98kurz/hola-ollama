@@ -1,3 +1,9 @@
+# Overview
+
+This project is a WIP agentic harness system for Ollama. The goal is to allow
+package users to build robust, custom agents/workflows using LLMs served by a
+local Ollama service. This is a library, not an application. 
+
 # Setup
 
 ```bash
@@ -5,11 +11,15 @@ source venv/bin/activate  # REQUIRED before all Python commands
 pip install -e .          # Install package for most manual testing
 ```
 
-# Testing Convention
+# Testing & Building Convention
 
 1. When writing ephemeral test code, use a minimum number of print statements to
   conserve output tokens.
 2. When testing ollama anything, use granite4.1:3b as the model.
+3. For the Build agent: use todo lists to track your work for anything non-trivial
+4. If you encounter anything requiring a major change in plans, stop and discuss
+5. Do not worry about backwards compatibility; this project is under development,
+  incomplete, and has never been used anywhere.
 
 # Code Style
 

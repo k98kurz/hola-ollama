@@ -10,11 +10,7 @@ from hola.session.exceptions import (
     SessionNotFoundError,
 )
 from hola.session.session import Session
-from hola.session.storage import (
-    delete_session as delete_session_storage,
-    list_sessions as storage_list_sessions,
-    session_exists as storage_session_exists,
-)
+from hola.session.storage import initialize
 
 
 _default_client: OllamaClient | None = None
@@ -44,8 +40,7 @@ def _get_or_create_default_client() -> OllamaClient:
 
 def create_session(
         tag: str | None = None, session_id: str | None = None,
-        client: OllamaClient | None = None, auto_load: bool = True,
-        auto_save: bool = True, portable: bool = False
+        client: OllamaClient | None = None, portable: bool = False
     ) -> Session:
     """Create a new session. Raises `SessionAlreadyExistsError` if
         `session_id` conflicts with existing session.
@@ -55,35 +50,27 @@ def create_session(
     else:
         sid = _generate_session_id(tag)
 
-    if storage_session_exists(sid, portable):
+    from hola.session.storage import session_exists
+    if session_exists(sid, portable):
         raise SessionAlreadyExistsError(f"Session '{sid}' already exists")
 
     client = client or _get_or_create_default_client()
-    session = Session(
-        sid, client, auto_load=False,
-        auto_save=auto_save, portable=portable
-    )
-    session.save()
-    session._auto_load = auto_load
-    return session
+    return Session(sid, client, portable=portable)
 
 
 def get_session(
         session_id: str, client: OllamaClient | None = None,
-        auto_load: bool = True, auto_save: bool = True,
         portable: bool = False
     ) -> Session:
     """Get existing session. Raises `SessionNotFoundError` if
         `session_id` does not exist.
     """
-    if not storage_session_exists(session_id, portable):
+    from hola.session.storage import session_exists
+    if not session_exists(session_id, portable):
         raise SessionNotFoundError(f"Session '{session_id}' not found")
 
     client = client or _get_or_create_default_client()
-    return Session(
-        session_id, client, auto_load=auto_load,
-        auto_save=auto_save, portable=portable
-    )
+    return Session(session_id, client, portable=portable)
 
 
 def list_sessions(portable: bool = False) -> list[str]:
@@ -91,6 +78,7 @@ def list_sessions(portable: bool = False) -> list[str]:
         sessions from portable mode (`CWD/.hola`) or non-portable mode
         (system config).
     """
+    from hola.session.storage import list_sessions as storage_list_sessions
     return storage_list_sessions(portable)
 
 
@@ -98,10 +86,14 @@ def delete_session(session_id: str, portable: bool = False) -> None:
     """Delete session storage from the specified mode. Raises
         `SessionNotFoundError` if session does not exist.
     """
-    if not storage_session_exists(session_id, portable):
+    from hola.session.storage import (
+        delete_session as storage_delete_session,
+        session_exists
+    )
+    if not session_exists(session_id, portable):
         raise SessionNotFoundError(f"Session '{session_id}' not found")
 
-    delete_session_storage(session_id, portable)
+    storage_delete_session(session_id, portable)
 
 
 def session_exists(session_id: str, portable: bool = False) -> bool:
@@ -109,4 +101,5 @@ def session_exists(session_id: str, portable: bool = False) -> bool:
         session exists in portable mode (`CWD/.hola`) or non-portable
         mode (system config), `False` otherwise.
     """
+    from hola.session.storage import session_exists as storage_session_exists
     return storage_session_exists(session_id, portable)

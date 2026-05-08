@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 @dataclass
 class Message:
-    role: Literal["system", "user", "assistant", "tool"]
+    role: Literal["USER", "CLANKER", "TOOL"]
     content: str
     tool_calls: list["ToolCall"] | None = None
     tool_name: str | None = None

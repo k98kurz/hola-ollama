@@ -1,31 +1,33 @@
 """
 Session types for Hola session management.
+
+Note: SessionState is deprecated and only maintained for backward compatibility.
+The session system now uses a SQLite database with ORM models.
 """
 
-from dataclasses import dataclass, field, asdict
+import warnings
+from dataclasses import dataclass
 from typing import Any
-from packify import Packable, pack, unpack
-from hola.ollama.types import Message
 
 
 @dataclass
-class SessionState(Packable):
-    """In-memory session data."""
-    conversation_history: list[tuple[str, Message]] = field(
-        default_factory=list
-    )
-    tool_outputs: dict[str, Any] = field(default_factory=dict)
-    fsm_state: dict[str, Any] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
-    memory: dict[str, Any] = field(default_factory=dict)
+class SessionState:
+    """Deprecated: In-memory session data (use database models instead).
 
-    def pack(self) -> bytes:
-        """Pack the instance into bytes."""
-        data_dict = asdict(self)
-        return pack(data_dict)
+    This class is maintained for backward compatibility only.
+    All session data is now persisted via the database models in
+    hola.session.models.
+    """
 
-    @classmethod
-    def unpack(cls, data: bytes, inject: dict = {}) -> "SessionState":
-        """Unpack an instance from bytes."""
-        data_dict = unpack(data, inject=inject)
-        return cls(**data_dict)
+    def __init__(self) -> None:
+        warnings.warn(
+            "SessionState is deprecated. "
+            "Use database models in hola.session.models instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        self.conversation_history = []
+        self.tool_outputs = {}
+        self.fsm_state = {}
+        self.metadata = {}
+        self.memory = {}

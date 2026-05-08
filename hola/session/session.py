@@ -2,200 +2,196 @@
 Session class for Hola session management.
 """
 
+from dataclasses import dataclass, field
 from threading import Lock
 from hola.ollama.client import OllamaClient
-from hola.ollama.types import Message
-from hola.session.exceptions import (
-    SessionDeleteError,
-    SessionLoadError,
-    SessionSaveError,
+from hola.ollama.types import Message as OMessage
+from hola.session.exceptions import SessionDeleteError
+from hola.session.models import (
+    MType,
+    Message as DBMessage,
+    Memory,
+    Session as DBSession,
 )
-from hola.session.storage import (
-    delete_session,
-    load_session_state,
-    save_session_state,
-    session_exists,
-)
-from hola.session.types import SessionState
+from hola.session.storage import initialize
+import packify
+import os
 
 
+@dataclass(slots=True)
 class Session:
     """Agent session with state management and persistence."""
+    session_id: str
+    client: OllamaClient
+    portable: bool
+    lock: Lock = field(default_factory=Lock)
+    dbsession: DBSession = field(default=None)
+    sequence: int = field(default=0)
 
-    def __init__(
-            self, session_id: str, client: OllamaClient,
-            auto_load: bool = True, auto_save: bool = True,
-            portable: bool = False
-        ) -> None:
-        """Initialize session."""
-        self._session_id = session_id
-        self._client = client
-        self._auto_load = auto_load
-        self._auto_save = auto_save
-        self._portable = portable
-        self._state = SessionState()
-        self._lock = Lock()
+    def __post_init__(self) -> None:
+        initialize(self.portable)
 
-        if auto_load:
-            self.load()
+        self.dbsession = DBSession.find(self.session_id) or DBSession.insert({
+            'id': self.session_id,
+            'cwd': os.getcwd(),
+        })
+        last_m_list = self.dbsession.messages().query().order_by(
+            'sequence', 'desc'
+        ).select(['sequence']).take(1)
+        if last_m_list:
+            last_m = last_m_list[0]
+            if last_m.sequence:
+                self.sequence = last_m.sequence + 1
 
-    @property
-    def session_id(self) -> str:
-        """Get the session ID."""
-        return self._session_id
-
-    @property
-    def client(self) -> OllamaClient:
-        """Get the OllamaClient."""
-        return self._client
-
-    def add_message(self, model: str, message: Message) -> None:
+    def add_message(self, model: str, message: OMessage) -> None:
         """Add a message to conversation history."""
-        with self._lock:
-            self._state.conversation_history.append((model, message))
-            if self._auto_save:
-                self._save()
+        with self.lock:
+            self.sequence += 1
+            m = DBMessage({
+                'session_id': self.session_id,
+                'sequence': self.sequence,
+                'type': MType(message.role).value,
+                'model': model,
+                'content': message.content,
+            })
+            m.details = {
+                'tool_name': message.tool_name,
+                'tool_calls': message.tool_calls,
+            }
+            m.save()
 
     def get_history(
-            self, model: str | None = None
-        ) -> list[tuple[str, Message]]:
+            self, model: str | None = None, limit: int = 10,
+        ) -> list[tuple[str, OMessage]]:
         """Get conversation history, optionally filtered by model."""
-        with self._lock:
-            if model is None:
-                return list(self._state.conversation_history)
-            return [
-                (m, msg) for m, msg in self._state.conversation_history
-                if m == model
+        with self.lock:
+            sqb = self.dbsession.messages().query().order_by('sequence', 'desc')
+            if model is not None:
+                sqb.equal('model', model)
+
+            msgs = [
+                (m.model, OMessage(m.type.value, m.content))
+                for m in sqb.take(limit)
             ]
+            msgs.reverse()
+            return msgs
 
-    def clear_history(self, model: str | None = None) -> None:
-        """Clear conversation history, optionally filtered by model."""
-        with self._lock:
-            if model is None:
-                self._state.conversation_history.clear()
-            else:
-                self._state.conversation_history = [
-                    (m, msg) for m, msg in self._state.conversation_history
-                    if m != model
-                ]
-            if self._auto_save:
-                self._save()
+    def clear_history(self) -> None:
+        """Clear conversation history."""
+        with self.lock:
+            sqb = self.dbsession.messages().query()
+            sqb.delete()
+            self.sequence = 0
 
-    def set_tool_output(self, call_id: str, result: object) -> None:
-        """Set tool output by call ID."""
-        with self._lock:
-            self._state.tool_outputs[call_id] = result
-            if self._auto_save:
-                self._save()
+    def add_tool_output(self, call_id: str, result: object) -> None:
+        """Set tool output by call ID. Stored as Message with MType.TOOL."""
+        with self.lock:
+            m = DBMessage({
+                'session_id': self.session_id,
+                'type': MType.TOOL.value,
+                'content': '',
+                'call_id': call_id,
+            })
+            m.details = {'result': result}
+            m.save()
 
-    def get_tool_output(self, call_id: str) -> object:
+    def get_tool_output(self, call_id: str) -> object | None:
         """Get tool output by call ID."""
-        with self._lock:
-            return self._state.tool_outputs.get(call_id)
+        with self.lock:
+            sqb = self.dbsession.messages().query().equal('call_id', call_id)
+            call = sqb.first()
+            if call:
+                return call.details.get('result')
+            return None
 
     def list_tool_outputs(self) -> dict[str, object]:
         """List all tool outputs."""
-        with self._lock:
-            return dict(self._state.tool_outputs)
+        with self.lock:
+            outputs = {}
+            sqb = self.dbsession.messages().query().equal('type', MType.TOOL.value)
+            for m in sqb.get():
+                call_id = m.call_id
+                result = m.details.get('result')
+                outputs[call_id] = result
 
-    def set_fsm_state(self, fsm_name: str, state: dict[str, object]) -> None:
-        """Set FSM state by name."""
-        with self._lock:
-            self._state.fsm_state[fsm_name] = state
-            if self._auto_save:
-                self._save()
+            return outputs
 
-    def get_fsm_state(self, fsm_name: str) -> dict[str, object] | None:
-        """Get FSM state by name."""
-        with self._lock:
-            return self._state.fsm_state.get(fsm_name)
+    def get_fsm_data(self) -> bytes:
+        """Get the bytes serialized FSM data to be deserialized by the
+            unpack method of the FSM subclass.
+        """
+        return self.dbsession.state
 
-    def clear_fsm_state(self, fsm_name: str) -> None:
-        """Clear FSM state by name."""
-        with self._lock:
-            self._state.fsm_state.pop(fsm_name, None)
-            if self._auto_save:
-                self._save()
+    def set_fsm_data(self, data: bytes) -> None:
+        """Set the serialized FSM bytes returned by the pack method of
+            the FSM subclass.
+        """
+        self.dbsession.state = data
+        self.dbsession.save()
 
     def set_metadata(self, key: str, value: object) -> None:
         """Set metadata key-value pair."""
-        with self._lock:
-            self._state.metadata[key] = value
-            if self._auto_save:
-                self._save()
+        with self.lock:
+            metadata = self.dbsession.metadata
+            metadata[key] = value
+            self.dbsession.metadata = metadata
+            self.dbsession.save()
 
-    def get_metadata(self, key: str, default: object = None) -> object:
+    def get_metadata(
+            self, key: str, default: object = None
+        ) -> object:
         """Get metadata value by key."""
-        with self._lock:
-            return self._state.metadata.get(key, default)
+        with self.lock:
+            return self.dbsession.metadata.get(key, default)
 
     def list_metadata(self) -> dict[str, object]:
         """List all metadata."""
-        with self._lock:
-            return dict(self._state.metadata)
+        with self.lock:
+            return self.dbsession.metadata
 
     def memorize(self, key: str, value: object) -> None:
         """Memorize a key-value pair."""
-        with self._lock:
-            self._state.memory[key] = value
-            if self._auto_save:
-                self._save()
+        with self.lock:
+            memory = self.dbsession.memories().query().equal('name', key).first()
+
+            if memory:
+                memory.content = value
+                memory.save()
+            else:
+                memory = Memory({
+                    'id': Memory.generate_id(),
+                    'session_id': self.session_id,
+                    'name': key,
+                })
+                memory.content = value
+                memory.save()
 
     def recall(self, key: str) -> object:
         """Recall a memorized value by key."""
-        with self._lock:
-            return self._state.memory.get(key)
+        with self.lock:
+            memory = self.dbsession.memories().query().equal('name', key).first()
+            if memory:
+                return memory.content
+            return None
 
     def forget(self, key: str) -> None:
         """Forget a memorized key-value pair."""
-        with self._lock:
-            self._state.memory.pop(key, None)
-            if self._auto_save:
-                self._save()
+        with self.lock:
+            memory = self.dbsession.memories().query().equal('name', key).first()
+            if memory:
+                memory.delete()
 
     def list_memory(self) -> dict[str, object]:
         """List all memorized key-value pairs."""
-        with self._lock:
-            return dict(self._state.memory)
-
-    def load(self) -> None:
-        """Load session state from storage."""
-        if not session_exists(self._session_id, self._portable):
-            return
-
-        loaded_state = load_session_state(self._session_id, self._portable)
-        if loaded_state is not None:
-            with self._lock:
-                self._state = loaded_state
-
-    def save(self) -> None:
-        """Save session state to storage."""
-        with self._lock:
-            try:
-                save_session_state(
-                    self._session_id, self._state, self._portable
-                )
-            except SessionSaveError as e:
-                raise SessionSaveError(
-                    f"Failed to save session '{self._session_id}': {e}"
-                ) from e
-
-    def _save(self) -> None:
-        """Internal save method without acquiring lock."""
-        try:
-            save_session_state(self._session_id, self._state, self._portable)
-        except SessionSaveError as e:
-            raise SessionSaveError(
-                f"Failed to save session '{self._session_id}': {e}"
-            ) from e
+        with self.lock:
+            return {
+                mem.name: mem.content
+                for mem in self.dbsession.memories().query().get()
+            }
 
     def delete(self) -> None:
         """Delete session and its storage."""
-        with self._lock:
-            try:
-                delete_session(self._session_id, self._portable)
-                self._state = SessionState()
-            except SessionDeleteError as e:
-                raise SessionDeleteError(
-                    f"Failed to delete session '{self._session_id}': {e}"
-                ) from e
+        with self.lock:
+            from hola.session.storage import delete_session
+            delete_session(self.session_id, self.portable)
+            self.dbsession = None
