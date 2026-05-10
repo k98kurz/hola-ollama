@@ -6,6 +6,7 @@ _empty = packify.pack({})
 
 
 class Session(SqlModel):
+    """Database model for storing session metadata and FSM state."""
     connection_info: str = 'hola.db'
     table: str = 'sessions'
     id_column: str = 'id'
@@ -19,6 +20,9 @@ class Session(SqlModel):
 
     @property
     def metadata(self) -> dict[str, object]:
+        """Return the deserialized session metadata dictionary. Can be set
+            using the setter to serialize and store a new dictionary.
+        """
         return packify.unpack(self.data.get('metadata', None) or _empty)
 
     @metadata.setter

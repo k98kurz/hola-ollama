@@ -9,6 +9,8 @@ from hola.session.exceptions import (
     SessionLoadError,
     SessionNotFoundError,
     SessionSaveError,
+    TempFileNotFoundError,
+    TempFileError,
 )
 from hola.session.manager import (
     create_session,
@@ -17,6 +19,11 @@ from hola.session.manager import (
     initialize,
     list_sessions,
     session_exists,
+)
+from hola.session.fsm import (
+    WorkflowEvent,
+    WorkflowFSM,
+    WorkflowState,
 )
 from hola.session.session import Session
 from hola.session.types import SessionState

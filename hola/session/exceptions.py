@@ -31,3 +31,13 @@ class SessionSaveError(SessionError):
 class SessionDeleteError(SessionError):
     """Raised when deleting a session fails."""
     pass
+
+
+class TempFileNotFoundError(SessionError):
+    """Raised when a temporary file cannot be found."""
+    pass
+
+
+class TempFileError(SessionError):
+    """Raised when a temporary file operation fails."""
+    pass

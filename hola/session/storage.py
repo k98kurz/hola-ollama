@@ -3,7 +3,15 @@ Session storage layer for Hola session management.
 """
 
 from pathlib import Path
+from shutil import rmtree
 from crossconfig import get_config
+from hola.session.exceptions import SessionNotFoundError
+from hola.session.models import (
+    Session as DBSession,
+    automigrate,
+    publish_migrations,
+    set_connection_string
+)
 
 
 _db_initialized: dict[bool, bool] = {False: False, True: False}
@@ -22,6 +30,12 @@ def _get_db_path(portable: bool = False) -> Path:
     return config.path(db_name)
 
 
+def _get_session_temp_dir(session_id: str, portable: bool = False) -> Path:
+    """Get the temp directory path for a session."""
+    config = _get_config(portable)
+    return config.path(f"sessions/{session_id}")
+
+
 def initialize(portable: bool = False) -> None:
     """Initialize database for session management. Call once per process.
         If True, use portable mode (CWD/.hola/sessions.db). If False,
@@ -29,12 +43,6 @@ def initialize(portable: bool = False) -> None:
     """
     if _db_initialized[portable]:
         return
-
-    from hola.session.models import (
-        set_connection_string,
-        publish_migrations,
-        automigrate
-    )
 
     db_path = str(_get_db_path(portable))
     set_connection_string(db_path)
@@ -49,26 +57,27 @@ def initialize(portable: bool = False) -> None:
 
 
 def delete_session(session_id: str, portable: bool = False) -> None:
-    """Delete session from database."""
+    """Delete session from database and clean up temp directory."""
     initialize(portable)
 
-    from hola.session.models import Session
-
-    db_session = Session.find(session_id)
+    db_session = DBSession.find(session_id)
     if db_session is None:
-        from hola.session.exceptions import SessionNotFoundError
         raise SessionNotFoundError(f"Session '{session_id}' not found")
 
+    db_session.messages().query().delete()
+    db_session.memories().query().delete()
     db_session.delete()
+
+    temp_dir = _get_session_temp_dir(session_id, portable)
+    if temp_dir.exists():
+        rmtree(temp_dir)
 
 
 def list_sessions(portable: bool = False) -> list[str]:
     """List all session IDs."""
     initialize(portable)
 
-    from hola.session.models import Session
-
-    sessions = Session.query().get()
+    sessions = DBSession.query().get()
     return [s.id for s in sessions]
 
 
@@ -76,6 +85,4 @@ def session_exists(session_id: str, portable: bool = False) -> bool:
     """Check if session exists."""
     initialize(portable)
 
-    from hola.session.models import Session
-
-    return Session.find(session_id) is not None
+    return DBSession.find(session_id) is not None

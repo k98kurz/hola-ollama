@@ -3,17 +3,22 @@ Session class for Hola session management.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from threading import Lock
 from hola.ollama.client import OllamaClient
 from hola.ollama.types import Message as OMessage
-from hola.session.exceptions import SessionDeleteError
+from hola.session.exceptions import (
+    SessionDeleteError,
+    SessionError,
+    TempFileNotFoundError,
+)
 from hola.session.models import (
     MType,
     Message as DBMessage,
     Memory,
     Session as DBSession,
 )
-from hola.session.storage import initialize
+from hola.session.storage import _get_session_temp_dir, initialize
 import packify
 import os
 
@@ -181,13 +186,72 @@ class Session:
             if memory:
                 memory.delete()
 
-    def list_memory(self) -> dict[str, object]:
+    def list_memories(self) -> dict[str, object]:
         """List all memorized key-value pairs."""
         with self.lock:
             return {
                 mem.name: mem.content
                 for mem in self.dbsession.memories().query().get()
             }
+
+    def create_temp_file(
+            self, filename: str, content: bytes | str
+        ) -> Path:
+        """Create a temporary file in the session's temp directory.
+            Returns the full path to the created file.
+        """
+        with self.lock:
+            temp_dir = _get_session_temp_dir(self.session_id, self.portable)
+            temp_dir.mkdir(parents=True, exist_ok=True)
+
+            file_path = temp_dir / filename
+            try:
+                if isinstance(content, str):
+                    file_path.write_text(content)
+                else:
+                    file_path.write_bytes(content)
+            except OSError as e:
+                raise SessionError(f"Failed to create temp file: {e}")
+
+            return file_path
+
+    def read_temp_file(self, filename: str) -> bytes:
+        """Read a temporary file as bytes."""
+        with self.lock:
+            temp_dir = _get_session_temp_dir(self.session_id, self.portable)
+            file_path = temp_dir / filename
+
+            if not file_path.exists():
+                raise TempFileNotFoundError(f"Temp file not found: {filename}")
+
+            try:
+                return file_path.read_bytes()
+            except OSError as e:
+                raise SessionError(f"Failed to read temp file: {e}")
+
+    def delete_temp_file(self, filename: str) -> None:
+        """Delete a temporary file."""
+        with self.lock:
+            temp_dir = _get_session_temp_dir(self.session_id, self.portable)
+            file_path = temp_dir / filename
+
+            if not file_path.exists():
+                raise TempFileNotFoundError(f"Temp file not found: {filename}")
+
+            try:
+                file_path.unlink()
+            except OSError as e:
+                raise SessionError(f"Failed to delete temp file: {e}")
+
+    def list_temp_files(self) -> list[str]:
+        """List all temporary files in the session's temp directory."""
+        with self.lock:
+            temp_dir = _get_session_temp_dir(self.session_id, self.portable)
+
+            if not temp_dir.exists():
+                return []
+
+            return [f.name for f in temp_dir.iterdir() if f.is_file()]
 
     def delete(self) -> None:
         """Delete session and its storage."""

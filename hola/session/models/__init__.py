@@ -1,3 +1,7 @@
+"""
+Database models for session management using sqloquent ORM.
+"""
+
 from .Memory import Memory
 from .Message import MType, Message
 from .Session import Session
@@ -15,15 +19,16 @@ Session.messages = has_many(Session, Message, 'session_id')
 
 
 # helper functions
-def set_connection_string(connection_string: str):
+def set_connection_string(connection_string: str) -> None:
+    """Sets the connection info for Hola session db models."""
     Memory.connection_info = connection_string
     Message.connection_info = connection_string
     Session.connection_info = connection_string
 
 def publish_migrations(
         migration_folder_path: Path,
-        migration_callback: Callable[[str, str], str] = None
-    ):
+        migration_callback: Callable[[str, str], str] | None = None
+    ) -> None:
     """Writes migration files for the models. If a migration callback is
         provided, it will be used to modify the migration file contents.
         The migration callback will be called with the model name and
@@ -41,7 +46,7 @@ def publish_migrations(
         with open(migration_folder_path / f'00_create_{name}.py', 'w') as f:
             f.write(m)
 
-def automigrate(migration_folder_path: str, db_file_path: str):
+def automigrate(migration_folder_path: str, db_file_path: str) -> None:
     """Executes the sqloquent automigrate tool."""
     sqloquent.tools.automigrate(migration_folder_path, db_file_path)
 
