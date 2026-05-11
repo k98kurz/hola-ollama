@@ -21,6 +21,9 @@ from hola.ollama.types import (
     ModelInfo,
     RunningModel,
     GenerationOptions,
+    GenerateRequest,
+    GenerateResponse,
+    GenerateChunk,
 )
 
 
@@ -338,6 +341,107 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             ), running_models
 
             await self.client.unload_model(model_name)
+
+    async def test_generate_streaming(self):
+        """Test streaming generate response."""
+        request = GenerateRequest(
+            model="granite4.1:3b",
+            prompt="Say hello",
+            options=GenerationOptions(num_predict=10),
+        )
+
+        chunks = []
+        async for chunk in self.client.generate(request):
+            chunks.append(chunk)
+            if chunk.done:
+                break
+
+        assert len(chunks) > 0, chunks
+        assert any(chunk.response for chunk in chunks), chunks
+        assert chunks[-1].done, chunks[-1].done
+
+    async def test_generate_sync(self):
+        """Test non-streaming generate response."""
+        request = GenerateRequest(
+            model="granite4.1:3b",
+            prompt="test",
+        )
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "model": "granite4.1:3b",
+            "response": "Hello world",
+            "done": True,
+            "total_duration": 1000000000,
+        }
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        client = OllamaClient()
+        client._client.post = mock_post
+
+        def run_generate_sync():
+            return client.generate_sync(request)
+
+        response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            run_generate_sync,
+        )
+
+        assert response.model == "granite4.1:3b", (
+            response.model,
+            "granite4.1:3b",
+        )
+        assert response.response == "Hello world", (
+            response.response,
+            "Hello world",
+        )
+
+        await client.close()
+
+    async def test_generate_retry_logic_connection_error(self):
+        """Test generate retry logic with connection errors."""
+        request = GenerateRequest(
+            model="granite4.1:3b",
+            prompt="test",
+        )
+
+        call_count = [0]
+
+        class MockStreamContext:
+            async def __aenter__(self):
+                call_count[0] += 1
+                raise httpx.ConnectError("Connection refused")
+
+            async def __aexit__(self, *args):
+                pass
+
+        self.client._client.stream = Mock(return_value=MockStreamContext())
+
+        with self.assertRaises(OllamaConnectionError):
+            async for _ in self.client.generate(request):
+                pass
+
+        assert call_count[0] == 3, (call_count[0], 3)
+
+    async def test_e2e_generate_workflow(self):
+        """Test end-to-end generate workflow (requires Ollama server)."""
+        request = GenerateRequest(
+            model="granite4.1:3b",
+            prompt="Say hello",
+            options=GenerationOptions(num_predict=10),
+        )
+
+        chunks = []
+        async for chunk in self.client.generate(request):
+            chunks.append(chunk)
+            if chunk.done:
+                break
+
+        assert len(chunks) > 0, chunks
+        assert any(chunk.response for chunk in chunks), chunks
+        assert chunks[-1].done, chunks[-1].done
 
 
 if __name__ == "__main__":

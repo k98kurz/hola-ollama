@@ -328,6 +328,309 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
 
+    async def test_nested_tool_call_single_level(self):
+        """Test single level nested tool call."""
+        @tool(name="inner", description="Inner tool")
+        def inner_tool(x: int) -> int:
+            return x * 2
+
+        @tool(name="outer", description="Outer tool")
+        def outer_tool(data: int) -> int:
+            return data + 10
+
+        nested_call = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": 5},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[nested_call],
+        )
+
+        result = await execute_tool_call(outer_call)
+        assert result == 20, result
+
+    async def test_nested_tool_call_deep_nesting(self):
+        """Test deeply nested tool calls."""
+        @tool(name="level1", description="Level 1")
+        def level1(x: int) -> int:
+            return x + 1
+
+        @tool(name="level2", description="Level 2")
+        def level2(data: int) -> int:
+            return data * 2
+
+        @tool(name="level3", description="Level 3")
+        def level3(data: int) -> int:
+            return data - 5
+
+        call1 = ToolCall(
+            function=ToolCallFunction(
+                name="level1",
+                arguments={"x": 5},
+            ),
+        )
+
+        call2 = ToolCall(
+            function=ToolCallFunction(
+                name="level2",
+                arguments={},
+            ),
+            nested_calls=[call1],
+        )
+
+        call3 = ToolCall(
+            function=ToolCallFunction(
+                name="level3",
+                arguments={},
+            ),
+            nested_calls=[call2],
+        )
+
+        result = await execute_tool_call(call3)
+        assert result == 7, result
+
+    async def test_nested_tool_call_multiple_children_list_param(self):
+        """Test nested tool call with multiple children and list parameter."""
+        @tool(name="add_one", description="Add one")
+        def add_one(x: int) -> int:
+            return x + 1
+
+        @tool(name="sum_all", description="Sum all numbers")
+        def sum_all(data: list[int]) -> int:
+            return sum(data)
+
+        call1 = ToolCall(
+            function=ToolCallFunction(
+                name="add_one",
+                arguments={"x": 1},
+            ),
+        )
+
+        call2 = ToolCall(
+            function=ToolCallFunction(
+                name="add_one",
+                arguments={"x": 2},
+            ),
+        )
+
+        call3 = ToolCall(
+            function=ToolCallFunction(
+                name="add_one",
+                arguments={"x": 3},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="sum_all",
+                arguments={},
+            ),
+            nested_calls=[call1, call2, call3],
+        )
+
+        result = await execute_tool_call(outer_call)
+        assert result == 9, result
+
+    async def test_nested_tool_call_multiple_children_no_list_param_error(self):
+        """Test error when multiple children but no list parameter."""
+        @tool(name="inner", description="Inner tool")
+        def inner_tool(x: int) -> int:
+            return x
+
+        @tool(name="outer", description="Outer tool")
+        def outer_tool(data: int) -> int:
+            return data
+
+        call1 = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": 1},
+            ),
+        )
+
+        call2 = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": 2},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[call1, call2],
+        )
+
+        with self.assertRaises(ToolExecutionError):
+            await execute_tool_call(outer_call)
+
+    async def test_nested_tool_call_inner_error_propagation(self):
+        """Test that inner tool errors prevent outer execution."""
+        @tool(name="failing_inner", description="Failing inner tool")
+        def failing_inner(x: int) -> int:
+            raise ValueError("Intentional failure")
+
+        @tool(name="outer", description="Outer tool")
+        def outer_tool(data: int) -> int:
+            return data + 10
+
+        nested_call = ToolCall(
+            function=ToolCallFunction(
+                name="failing_inner",
+                arguments={"x": 5},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[nested_call],
+        )
+
+        with self.assertRaises(ToolExecutionError):
+            await execute_tool_call(outer_call)
+
+    async def test_type_conversion_int_to_float(self):
+        """Test automatic type conversion from int to float."""
+        @tool(name="inner", description="Inner tool")
+        def inner_tool(x: int) -> int:
+            return x
+
+        @tool(name="outer", description="Outer tool")
+        def outer_tool(data: float) -> float:
+            return data * 1.5
+
+        nested_call = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": 4},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[nested_call],
+        )
+
+        result = await execute_tool_call(outer_call)
+        assert result == 6.0, result
+
+    async def test_type_conversion_str_to_int(self):
+        """Test automatic type conversion from str to int."""
+        @tool(name="inner", description="Inner tool")
+        def inner_tool(x: str) -> str:
+            return x
+
+        @tool(name="outer", description="Outer tool")
+        def outer_tool(data: int) -> int:
+            return data * 2
+
+        nested_call = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": "5"},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[nested_call],
+        )
+
+        result = await execute_tool_call(outer_call)
+        assert result == 10, result
+
+    async def test_type_conversion_bool_from_string(self):
+        """Test boolean conversion from string."""
+        @tool(name="inner", description="Inner tool")
+        def inner_tool(x: str) -> str:
+            return x
+
+        @tool(name="outer", description="Outer tool")
+        def outer_tool(data: bool) -> str:
+            return "yes" if data else "no"
+
+        nested_call = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": "true"},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[nested_call],
+        )
+
+        result = await execute_tool_call(outer_call)
+        assert result == "yes", result
+
+    async def test_dependency_resolution_execution_order(self):
+        """Test that nested calls execute in correct order (depth-first)."""
+        execution_order = []
+
+        @tool(name="first", description="First tool")
+        def first_tool(x: int) -> int:
+            execution_order.append("first")
+            return x
+
+        @tool(name="second", description="Second tool")
+        def second_tool(data: int) -> int:
+            execution_order.append("second")
+            return data + 1
+
+        @tool(name="third", description="Third tool")
+        def third_tool(data: int) -> int:
+            execution_order.append("third")
+            return data + 2
+
+        call1 = ToolCall(
+            function=ToolCallFunction(
+                name="first",
+                arguments={"x": 1},
+            ),
+        )
+
+        call2 = ToolCall(
+            function=ToolCallFunction(
+                name="second",
+                arguments={},
+            ),
+            nested_calls=[call1],
+        )
+
+        call3 = ToolCall(
+            function=ToolCallFunction(
+                name="third",
+                arguments={},
+            ),
+            nested_calls=[call2],
+        )
+
+        await execute_tool_call(call3)
+
+        assert execution_order == ["first", "second", "third"], execution_order
+
 
 if __name__ == "__main__":
     unittest.main()

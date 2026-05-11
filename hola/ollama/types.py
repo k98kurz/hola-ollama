@@ -36,6 +36,7 @@ class ToolCallFunction:
 @dataclass
 class ToolCall:
     function: ToolCallFunction
+    nested_calls: list["ToolCall"] | None = None
 
 
 @dataclass
@@ -99,3 +100,39 @@ class RunningModel:
     size: int
     vm_peak: int | None = None
     vram_total: int | None = None
+
+
+@dataclass
+class GenerateRequest:
+    model: str
+    prompt: str
+    stream: bool = True
+    options: GenerationOptions | None = None
+    keep_alive: str | None = None
+
+
+@dataclass
+class GenerateChunk:
+    model: str
+    response: str
+    done: bool
+    done_reason: str | None = None
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_eval_count: int | None = None
+    prompt_eval_duration: int | None = None
+    eval_count: int | None = None
+    eval_duration: int | None = None
+
+
+@dataclass
+class GenerateResponse:
+    model: str
+    response: str
+    done: bool
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_eval_count: int | None = None
+    prompt_eval_duration: int | None = None
+    eval_count: int | None = None
+    eval_duration: int | None = None

@@ -111,7 +111,8 @@ def some_other_function(x: int, y: int, z: int) -> list[float]:
 
 - Imports must always be at the top of the file, never in function/method bodies
 - Group all `from package import whatever` before all `import package` statements
-- Then group imports: stdlib first, then external dependencies, then ideagen internal modules
+- Then group imports: relative first, stdlib first, then external dependencies,
+  then internal modules
 - Order imports alphabetically within each group
 - No blank lines between import statements
 - Imports come after file-level docstrings
@@ -124,10 +125,11 @@ to explain the import pattern to agents; agents should not replicate
 the inline comments in actual code.
 """
 
+from .SubModule import SomeThing # relative
 from hashlib import sha256 # stdlib
 from sys import argv # stdlib
 from crossconfig import get_config # external package
-from ideagen.ollama import run_ollama # internal module
+from hola.ollama import OllamaClient # internal, non-relative
 import json # stdlib
 import os # stdlib
 import packify # external package

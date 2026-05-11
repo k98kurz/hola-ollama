@@ -8,6 +8,7 @@ from hola.ollama.exceptions import ToolExecutionError
 from hola.ollama.types import (
     FunctionDefinition,
     ToolCall,
+    ToolCallFunction,
     ToolDefinition,
 )
 import asyncio
@@ -144,6 +145,220 @@ def _type_to_schema(type_hint: Any) -> dict[str, Any]:
     return {"type": "object"}
 
 
+def _convert_type(
+        value: Any,
+        target_type: type,
+    ) -> Any:
+    """Convert value to target type if possible."""
+    if target_type is str:
+        return str(value)
+
+    if target_type is int:
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(value.split('.')[0])
+            except ValueError:
+                raise ToolExecutionError(
+                    f"Cannot convert {value!r} to int"
+                )
+        raise ToolExecutionError(
+            f"Cannot convert {type(value).__name__} to int"
+        )
+
+    if target_type is float:
+        if isinstance(value, (int, float, str)):
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                raise ToolExecutionError(
+                    f"Cannot convert {value!r} to float"
+                )
+        raise ToolExecutionError(
+            f"Cannot convert {type(value).__name__} to float"
+        )
+
+    if target_type is bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "yes", "on")
+        raise ToolExecutionError(
+            f"Cannot convert {type(value).__name__} to bool"
+        )
+
+    if target_type is list:
+        if isinstance(value, list):
+            return value
+        return [value]
+
+    if target_type is dict:
+        if isinstance(value, dict):
+            return value
+        raise ToolExecutionError(
+            f"Cannot convert {type(value).__name__} to dict"
+        )
+
+    return value
+
+
+def _resolve_execution_order(
+        tool_call: ToolCall,
+    ) -> list[ToolCall]:
+    """Resolve execution order for nested tool calls using depth-first traversal."""
+    order = []
+
+    def _traverse(call: ToolCall) -> None:
+        if call.nested_calls:
+            for nested in call.nested_calls:
+                _traverse(nested)
+        order.append(call)
+
+    _traverse(tool_call)
+    return order
+
+
+def _check_list_parameter_compatibility(
+        tool_def: ToolDefinition,
+        num_children: int,
+    ) -> bool:
+    """Check if tool can accept a list parameter for nested results."""
+    params = tool_def.function.parameters.get("properties", {})
+
+    data_param = params.get("data")
+    if data_param and data_param.get("type") == "array":
+        return True
+
+    for param_name, param_schema in params.items():
+        if param_schema.get("type") == "array":
+            return True
+
+    return False
+
+
+async def _execute_nested_tool_call(
+        tool_call: ToolCall,
+        registry: "ToolRegistry",
+    ) -> Any:
+    """Execute a nested tool call with its children first."""
+    if tool_call.nested_calls:
+        child_results = []
+
+        for nested_call in tool_call.nested_calls:
+            try:
+                result = await _execute_nested_tool_call(
+                    nested_call,
+                    registry,
+                )
+                child_results.append(result)
+            except Exception as e:
+                logger.error(
+                    "Nested tool call failed for %s: %s",
+                    nested_call.function.name,
+                    e,
+                )
+                raise ToolExecutionError(
+                    f"Nested tool call failed: {e}"
+                ) from e
+
+        tool_def = registry.get_tool(tool_call.function.name)
+
+        if tool_def is None:
+            raise ToolExecutionError(
+                f"Tool not found: {tool_call.function.name}"
+            )
+
+        if len(child_results) > 1:
+            if not _check_list_parameter_compatibility(
+                tool_def,
+                len(child_results),
+            ):
+                raise ToolExecutionError(
+                    f"Tool {tool_call.function.name} has multiple "
+                    "nested calls but does not accept a list parameter"
+                )
+
+        args = tool_call.function.arguments.copy()
+
+        if child_results:
+            if len(child_results) == 1:
+                args["data"] = child_results[0]
+            else:
+                args["data"] = child_results
+
+        args = _convert_arguments_for_tool(args, tool_def)
+
+        return await registry.execute_tool_call(
+            ToolCall(
+                function=ToolCallFunction(
+                    name=tool_call.function.name,
+                    arguments=args,
+                ),
+            ),
+        )
+
+    return await registry.execute_tool_call(tool_call)
+
+
+def _convert_arguments_for_tool(
+        args: dict[str, Any],
+        tool_def: ToolDefinition,
+    ) -> dict[str, Any]:
+    """Convert argument types to match tool schema."""
+    converted = {}
+    params = tool_def.function.parameters.get("properties", {})
+
+    for key, value in args.items():
+        if key in params:
+            param_schema = params[key]
+            param_type = param_schema.get("type")
+
+            if param_type == "string":
+                converted[key] = _convert_type(value, str)
+            elif param_type == "integer":
+                converted[key] = _convert_type(value, int)
+            elif param_type == "number":
+                converted[key] = _convert_type(value, float)
+            elif param_type == "boolean":
+                converted[key] = _convert_type(value, bool)
+            elif param_type == "array":
+                if not isinstance(value, list):
+                    value = [value]
+                item_schema = param_schema.get("items", {})
+                item_type = item_schema.get("type")
+                if item_type:
+                    converted[key] = [
+                        _convert_type(item, _python_type_from_schema(item_type))
+                        for item in value
+                    ]
+                else:
+                    converted[key] = value
+            elif param_type == "object":
+                converted[key] = _convert_type(value, dict)
+            else:
+                converted[key] = value
+        else:
+            converted[key] = value
+
+    return converted
+
+
+def _python_type_from_schema(schema_type: str) -> type:
+    """Convert JSON schema type to Python type."""
+    type_map = {
+        "string": str,
+        "integer": int,
+        "number": float,
+        "boolean": bool,
+        "array": list,
+        "object": dict,
+    }
+    return type_map.get(schema_type, object)
+
+
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolDefinition] = {}
@@ -172,6 +387,9 @@ class ToolRegistry:
             self,
             tool_call: ToolCall,
         ) -> Any:
+        if tool_call.nested_calls:
+            return await _execute_nested_tool_call(tool_call, self)
+
         name = tool_call.function.name
         func = self._functions.get(name)
 
@@ -265,4 +483,6 @@ def list_tools() -> list[ToolDefinition]:
 
 async def execute_tool_call(tool_call: ToolCall) -> Any:
     """Execute tool call using global registry."""
+    if tool_call.nested_calls:
+        return await _execute_nested_tool_call(tool_call, _registry)
     return await _registry.execute_tool_call(tool_call)

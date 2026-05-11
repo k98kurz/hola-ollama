@@ -17,6 +17,9 @@ from hola.ollama.types import (
     ChatRequest,
     ChatResponse,
     ChatResponseChunk,
+    GenerateChunk,
+    GenerateRequest,
+    GenerateResponse,
     Message,
     ModelInfo,
     RunningModel,
@@ -194,6 +197,182 @@ class OllamaClient:
                         ),
                         tool_name=data["message"].get("tool_name"),
                     ),
+                    done=data["done"],
+                    total_duration=data.get("total_duration"),
+                    load_duration=data.get("load_duration"),
+                    prompt_eval_count=data.get("prompt_eval_count"),
+                    prompt_eval_duration=data.get("prompt_eval_duration"),
+                    eval_count=data.get("eval_count"),
+                    eval_duration=data.get("eval_duration"),
+                )
+
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                if attempt == self._config.max_retries - 1:
+                    logger.error(
+                        "Connection failed after %d attempts for model %s",
+                        self._config.max_retries,
+                        request.model,
+                    )
+                    raise OllamaConnectionError(
+                        f"Failed to connect to Ollama after "
+                        f"{self._config.max_retries} attempts"
+                    ) from e
+
+                delay = self._config.retry_delay * (2 ** attempt)
+                logger.debug(
+                    "Connection error, retrying in %.1fs (attempt %d/%d): %s",
+                    delay,
+                    attempt + 1,
+                    self._config.max_retries,
+                    e,
+                )
+                await asyncio.sleep(delay)
+
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "HTTP error %s for model %s: %s",
+                    e.response.status_code,
+                    request.model,
+                    e,
+                )
+                raise OllamaRequestError(
+                    f"HTTP error {e.response.status_code}: {e}"
+                ) from e
+
+            except httpx.HTTPError as e:
+                logger.error(
+                    "HTTP error for model %s: %s",
+                    request.model,
+                    e,
+                )
+                raise OllamaClientError(
+                    f"HTTP error: {e}"
+                ) from e
+
+    async def generate(
+            self,
+            request: GenerateRequest,
+        ) -> AsyncGenerator[GenerateChunk, None]:
+        """Generate text using /api/generate endpoint for non-tool-calling models."""
+        logger.debug("Starting generate request for model %s", request.model)
+
+        for attempt in range(self._config.max_retries):
+            try:
+                async with self._client.stream(
+                        "POST",
+                        "/api/generate",
+                        json=self._serialize_generate_request(request),
+                    ) as response:
+                    response.raise_for_status()
+
+                    async for chunk in self._parse_generate_stream(response):
+                        yield chunk
+
+                    return
+
+            except httpx.ConnectError as e:
+                if attempt == self._config.max_retries - 1:
+                    logger.error(
+                        "Connection failed after %d attempts for model %s",
+                        self._config.max_retries,
+                        request.model,
+                    )
+                    raise OllamaConnectionError(
+                        f"Failed to connect to Ollama after "
+                        f"{self._config.max_retries} attempts"
+                    ) from e
+
+                delay = self._config.retry_delay * (2 ** attempt)
+                logger.debug(
+                    "Connection error, retrying in %.1fs (attempt %d/%d): %s",
+                    delay,
+                    attempt + 1,
+                    self._config.max_retries,
+                    e,
+                )
+                await asyncio.sleep(delay)
+
+            except httpx.TimeoutException as e:
+                if attempt == self._config.max_retries - 1:
+                    logger.error(
+                        "Request timed out after %d attempts for model %s",
+                        self._config.max_retries,
+                        request.model,
+                    )
+                    raise OllamaConnectionError(
+                        f"Timeout after {self._config.max_retries} attempts"
+                    ) from e
+
+                delay = self._config.retry_delay * (2 ** attempt)
+                logger.debug(
+                    "Timeout, retrying in %.1fs (attempt %d/%d): %s",
+                    delay,
+                    attempt + 1,
+                    self._config.max_retries,
+                    e,
+                )
+                await asyncio.sleep(delay)
+
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    "HTTP error %s for model %s: %s",
+                    e.response.status_code,
+                    request.model,
+                    e,
+                )
+                raise OllamaRequestError(
+                    f"HTTP error {e.response.status_code}: {e}"
+                ) from e
+
+            except httpx.HTTPError as e:
+                logger.error(
+                    "HTTP error for model %s: %s",
+                    request.model,
+                    e,
+                )
+                raise OllamaClientError(
+                    f"HTTP error: {e}"
+                ) from e
+
+    def generate_sync(
+            self,
+            request: GenerateRequest,
+        ) -> GenerateResponse:
+        """Non-streaming generate convenience wrapper."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            raise RuntimeError(
+                "generate_sync cannot be called from within an "
+                "async context. Use the async generate() method instead."
+            )
+
+        return asyncio.run(self._generate_sync_async(request))
+
+    async def _generate_sync_async(
+            self,
+            request: GenerateRequest,
+        ) -> GenerateResponse:
+        """Async implementation of non-streaming generate."""
+        logger.debug("Starting non-streaming generate for model %s", request.model)
+        request_dict = self._serialize_generate_request(request)
+        request_dict["stream"] = False
+
+        for attempt in range(self._config.max_retries):
+            try:
+                response = await self._client.post(
+                    "/api/generate",
+                    json=request_dict,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                return GenerateResponse(
+                    model=data["model"],
+                    response=data["response"],
                     done=data["done"],
                     total_duration=data.get("total_duration"),
                     load_duration=data.get("load_duration"),
@@ -677,3 +856,63 @@ class OllamaClient:
             )
             for tc in tool_calls_data
         ]
+
+    def _serialize_generate_request(
+            self,
+            request: GenerateRequest,
+        ) -> dict:
+        """Convert GenerateRequest to JSON-serializable dict."""
+        result = {
+            "model": request.model,
+            "prompt": request.prompt,
+            "stream": request.stream,
+        }
+
+        if request.options is not None:
+            result["options"] = self._serialize_generation_options(request.options)
+
+        if request.keep_alive is not None:
+            result["keep_alive"] = request.keep_alive
+
+        return result
+
+    async def _parse_generate_stream(
+            self,
+            response,
+        ) -> AsyncGenerator[GenerateChunk, None]:
+        """Parse SSE streaming response for generate endpoint."""
+        async for line in response.aiter_lines():
+            line = line.strip()
+
+            if not line:
+                continue
+
+            if line.startswith("data: "):
+                data = line[6:]
+            else:
+                data = line
+
+            try:
+                chunk_data = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+
+            yield self._parse_generate_chunk(chunk_data)
+
+    def _parse_generate_chunk(
+            self,
+            data: dict,
+        ) -> GenerateChunk:
+        """Parse JSON chunk to GenerateChunk."""
+        return GenerateChunk(
+            model=data["model"],
+            response=data.get("response", ""),
+            done=data["done"],
+            done_reason=data.get("done_reason"),
+            total_duration=data.get("total_duration"),
+            load_duration=data.get("load_duration"),
+            prompt_eval_count=data.get("prompt_eval_count"),
+            prompt_eval_duration=data.get("prompt_eval_duration"),
+            eval_count=data.get("eval_count"),
+            eval_duration=data.get("eval_duration"),
+        )
