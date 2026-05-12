@@ -6,7 +6,6 @@ from types import UnionType
 from typing import Any, Callable
 from hola.ollama.exceptions import ToolExecutionError
 from hola.ollama.types import (
-    FunctionDefinition,
     ToolCall,
     ToolCallFunction,
     ToolDefinition,
@@ -226,7 +225,7 @@ def _check_list_parameter_compatibility(
         num_children: int,
     ) -> bool:
     """Check if tool can accept a list parameter for nested results."""
-    params = tool_def.function.parameters.get("properties", {})
+    params = tool_def.parameters.get("properties", {})
 
     data_param = params.get("data")
     if data_param and data_param.get("type") == "array":
@@ -309,7 +308,7 @@ def _convert_arguments_for_tool(
     ) -> dict[str, Any]:
     """Convert argument types to match tool schema."""
     converted = {}
-    params = tool_def.function.parameters.get("properties", {})
+    params = tool_def.parameters.get("properties", {})
 
     for key, value in args.items():
         if key in params:
@@ -369,8 +368,8 @@ class ToolRegistry:
             tool: ToolDefinition,
             func: Callable[..., Any],
         ) -> None:
-        self._tools[tool.function.name] = tool
-        self._functions[tool.function.name] = func
+        self._tools[tool.name] = tool
+        self._functions[tool.name] = func
 
     def get_tool(
             self,
@@ -401,7 +400,7 @@ class ToolRegistry:
 
         if tool_def is not None:
             try:
-                _validate_args(args, tool_def.function.parameters)
+                _validate_args(args, tool_def.parameters)
             except ToolExecutionError as e:
                 logger.error(
                     "Argument validation failed for tool %s: %s",
@@ -447,13 +446,11 @@ def tool(
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         schema = _generate_schema(func)
 
-        func_def = FunctionDefinition(
+        tool_def = ToolDefinition(
             name=name,
             description=description,
             parameters=schema,
         )
-
-        tool_def = ToolDefinition(type="function", function=func_def)
 
         _registry.register_tool(tool_def, func)
 

@@ -2,9 +2,9 @@
 Core types for Ollama API compatibility.
 """
 
-from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal
+from typing import Any
+from hola.errors import validated_dataclass
 
 
 class Role(Enum):
@@ -15,7 +15,7 @@ class Role(Enum):
     TOOL = 'tool'
 
 
-@dataclass
+@validated_dataclass
 class Message:
     role: Role
     content: str
@@ -23,32 +23,26 @@ class Message:
     tool_name: str | None = None
 
 
-@dataclass
-class FunctionDefinition:
+@validated_dataclass
+class ToolDefinition:
     name: str
     description: str
     parameters: dict[str, Any]
 
 
-@dataclass
-class ToolDefinition:
-    type: Literal["function"]
-    function: FunctionDefinition
-
-
-@dataclass
+@validated_dataclass
 class ToolCallFunction:
     name: str
     arguments: dict[str, Any]
 
 
-@dataclass
+@validated_dataclass
 class ToolCall:
     function: ToolCallFunction
     nested_calls: list["ToolCall"] | None = None
 
 
-@dataclass
+@validated_dataclass
 class GenerationOptions:
     temperature: float | None = None
     top_p: float | None = None
@@ -57,7 +51,7 @@ class GenerationOptions:
     seed: int | None = None
 
 
-@dataclass
+@validated_dataclass
 class ChatRequest:
     model: str
     messages: list[Message]
@@ -67,7 +61,7 @@ class ChatRequest:
     keep_alive: str | None = None
 
 
-@dataclass
+@validated_dataclass
 class ChatResponseChunk:
     model: str
     message: Message
@@ -81,7 +75,7 @@ class ChatResponseChunk:
     eval_duration: int | None = None
 
 
-@dataclass
+@validated_dataclass
 class ChatResponse:
     model: str
     message: Message
@@ -94,7 +88,7 @@ class ChatResponse:
     eval_duration: int | None = None
 
 
-@dataclass
+@validated_dataclass
 class ModelInfo:
     name: str
     modified_at: str
@@ -102,7 +96,7 @@ class ModelInfo:
     digest: str
 
 
-@dataclass
+@validated_dataclass
 class RunningModel:
     name: str
     expires_at: str
@@ -111,7 +105,7 @@ class RunningModel:
     vram_total: int | None = None
 
 
-@dataclass
+@validated_dataclass
 class GenerateRequest:
     model: str
     prompt: str
@@ -121,7 +115,7 @@ class GenerateRequest:
     keep_alive: str | None = None
 
 
-@dataclass
+@validated_dataclass
 class GenerateChunk:
     model: str
     response: str
@@ -135,7 +129,7 @@ class GenerateChunk:
     eval_duration: int | None = None
 
 
-@dataclass
+@validated_dataclass
 class GenerateResponse:
     model: str
     response: str

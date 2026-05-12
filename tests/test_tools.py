@@ -14,10 +14,11 @@ from hola.ollama.tools import (
     execute_tool_call,
 )
 from hola.ollama.types import (
-    ToolDefinition,
+    Message,
+    Role,
     ToolCall,
-    FunctionDefinition,
     ToolCallFunction,
+    ToolDefinition,
 )
 from hola.ollama.exceptions import ToolExecutionError
 
@@ -35,27 +36,24 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             return f"{x}:{y}"
 
         tool_def = ToolDefinition(
-            type="function",
-            function=FunctionDefinition(
-                name="test_tool",
-                description="Test tool",
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "x": {"type": "integer"},
-                        "y": {"type": "string"},
-                    },
-                    "required": ["x", "y"],
+            name="test_tool",
+            description="Test tool",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "string"},
                 },
-            ),
+                "required": ["x", "y"],
+            },
         )
 
         self.registry.register_tool(tool_def, test_func)
 
         retrieved = self.registry.get_tool("test_tool")
         assert retrieved is not None, retrieved
-        assert retrieved.function.name == "test_tool", (
-            retrieved.function.name,
+        assert retrieved.name == "test_tool", (
+            retrieved.name,
             "test_tool",
         )
 
@@ -73,29 +71,23 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             return y
 
         tool_def1 = ToolDefinition(
-            type="function",
-            function=FunctionDefinition(
-                name="tool1",
-                description="Tool 1",
-                parameters={
-                    "type": "object",
-                    "properties": {"x": {"type": "integer"}},
-                    "required": ["x"],
-                },
-            ),
+            name="tool1",
+            description="Tool 1",
+            parameters={
+                "type": "object",
+                "properties": {"x": {"type": "integer"}},
+                "required": ["x"],
+            },
         )
 
         tool_def2 = ToolDefinition(
-            type="function",
-            function=FunctionDefinition(
-                name="tool2",
-                description="Tool 2",
-                parameters={
-                    "type": "object",
-                    "properties": {"y": {"type": "string"}},
-                    "required": ["y"],
-                },
-            ),
+            name="tool2",
+            description="Tool 2",
+            parameters={
+                "type": "object",
+                "properties": {"y": {"type": "string"}},
+                "required": ["y"],
+            },
         )
 
         self.registry.register_tool(tool_def1, func1)
@@ -112,8 +104,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
 
         retrieved = get_tool("add_numbers")
         assert retrieved is not None, retrieved
-        assert retrieved.function.name == "add_numbers", (
-            retrieved.function.name,
+        assert retrieved.name == "add_numbers", (
+            retrieved.name,
             "add_numbers",
         )
 
@@ -128,7 +120,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         ) -> dict:
             return {}
 
-        schema = get_tool("test_tool").function.parameters
+        schema = get_tool("test_tool").parameters
 
         assert schema["properties"]["name"]["type"] == "string", (
             schema["properties"]["name"]["type"],
@@ -157,7 +149,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         ) -> dict:
             return {}
 
-        schema = get_tool("test_tool").function.parameters
+        schema = get_tool("test_tool").parameters
 
         assert "name" in schema["required"], schema["required"]
         assert "count" not in schema["required"], schema["required"]
@@ -181,7 +173,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         ) -> dict:
             return {}
 
-        schema = get_tool("test_tool").function.parameters
+        schema = get_tool("test_tool").parameters
 
         assert schema["properties"]["items"]["type"] == "array", (
             schema["properties"]["items"]["type"],

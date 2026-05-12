@@ -742,13 +742,13 @@ class OllamaClient:
             self,
             tool,
         ) -> dict:
-        """Serialize ToolDefinition to dict."""
+        """Serialize ToolDefinition to Ollama API format."""
         return {
-            "type": tool.type,
+            "type": "function",
             "function": {
-                "name": tool.function.name,
-                "description": tool.function.description,
-                "parameters": tool.function.parameters,
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
             },
         }
 
