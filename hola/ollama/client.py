@@ -189,7 +189,7 @@ class OllamaClient:
                 return ChatResponse(
                     model=data["model"],
                     message=Message(
-                        role=data["message"]["role"],
+                        role=Role(data["message"]["role"]),
                         content=data["message"].get("content"),
                         tool_calls=(
                             self._parse_tool_calls(data["message"].get("tool_calls"))

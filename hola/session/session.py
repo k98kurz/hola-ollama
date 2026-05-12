@@ -74,7 +74,7 @@ class Session:
                 sqb.equal('model', model)
 
             msgs = [
-                (m.model, OMessage(m.role.value, m.content))
+                (m.model, OMessage(m.role, m.content))
                 for m in sqb.take(limit)
             ]
             msgs.reverse()
