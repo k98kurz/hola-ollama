@@ -1,0 +1,31 @@
+The following was measured with the scripts/compatibility.py script:
+
+Ollama Model Endpoint Response Times
+============================================================
+Model Name                     /api/chat    /api/generate
+------------------------------------------------------------
+phi4-mini:latest               0.9s         0.9s        
+qwen3.5:latest                 3.4s         3.2s        
+qwen3.5:2b                     1.3s         1.7s        
+llama3.2:latest                2.2s         0.9s        
+granite4.1:3b                  1.1s         0.8s        
+gemma4:e2b                     1.5s         1.1s        
+moondream:latest               0.3s         0.2s        
+gemma3:1b                      0.8s         0.9s        
+jaahas/qwen3.5-uncensored:4b   3.3s         3.5s        
+dolphin-mistral:latest         4.9s         1.4s        
+dolphin3:latest                4.2s         1.7s        
+dolphin-phi:latest             1.8s         0.6s        
+gemma4:e4b                     2.1s         1.4s        
+ministral-3:8b                 E1           E1          
+tinyllama:latest               0.7s         0.3s        
+ministral-3:3b                 E1           6.5s        
+qwen3:0.6b                     0.3s         0.3s        
+deepseek-r1:latest             1.6s         1.5s        
+qwen3:latest                   2.7s         1.6s        
+mistral:latest                 1.3s         1.1s        
+functiongemma:latest           0.4s         0.4s        
+
+Error Code Legend:
+----------------------------------------
+E1: TimeoutError: Request timed out after 30.0s
