@@ -14,9 +14,6 @@ from hola.session.models import (
 )
 
 
-_db_initialized: dict[bool, bool] = {False: False, True: False}
-
-
 def _get_config(portable: bool):
     """Get config instance based on portable mode."""
     app_name = ".hola" if portable else "hola"
@@ -26,8 +23,7 @@ def _get_config(portable: bool):
 def _get_db_path(portable: bool = False) -> Path:
     """Get database file path based on mode."""
     config = _get_config(portable)
-    db_name = "sessions.db"
-    return config.path(db_name)
+    return config.path("sessions/sessions.db")
 
 
 def _get_session_temp_dir(session_id: str, portable: bool = False) -> Path:
@@ -38,22 +34,22 @@ def _get_session_temp_dir(session_id: str, portable: bool = False) -> Path:
 
 def initialize(portable: bool = False) -> None:
     """Initialize database for session management. Call once per process.
-        If True, use portable mode (CWD/.hola/sessions.db). If False,
-        use system config (~/.config/hola/sessions.db).
+        If True, use portable mode (CWD/.hola/sessions/sessions.db). If
+        False, use system config (~/.config/hola/sessions/sessions.db).
     """
-    if _db_initialized[portable]:
-        return
+    db_path = _get_db_path(portable)
+    db_dir = db_path.parent
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = str(db_path)
 
-    db_path = str(_get_db_path(portable))
     set_connection_string(db_path)
+
 
     migrations_dir = _get_config(portable).path("migrations")
     migrations_dir.mkdir(parents=True, exist_ok=True)
 
     publish_migrations(migrations_dir)
     automigrate(str(migrations_dir), db_path)
-
-    _db_initialized[portable] = True
 
 
 def delete_session(session_id: str, portable: bool = False) -> None:

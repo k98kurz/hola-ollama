@@ -22,6 +22,7 @@ from hola.ollama.types import (
     GenerateResponse,
     Message,
     ModelInfo,
+    Role,
     RunningModel,
     ToolCall,
     ToolCallFunction,
@@ -723,7 +724,7 @@ class OllamaClient:
         ) -> dict:
         """Convert Message to dict."""
         result = {
-            "role": message.role,
+            "role": message.role.value,
             "content": message.content,
         }
 
@@ -824,7 +825,7 @@ class OllamaClient:
         return ChatResponseChunk(
             model=data["model"],
             message=Message(
-                role=message_data.get("role", "assistant"),
+                role=Role(message_data.get("role", "assistant")),
                 content=message_data.get("content"),
                 tool_calls=tool_calls,
                 tool_name=message_data.get("tool_name"),
@@ -867,6 +868,9 @@ class OllamaClient:
             "prompt": request.prompt,
             "stream": request.stream,
         }
+
+        if request.system is not None:
+            result["system"] = request.system
 
         if request.options is not None:
             result["options"] = self._serialize_generation_options(request.options)

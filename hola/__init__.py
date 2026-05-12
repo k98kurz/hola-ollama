@@ -5,6 +5,7 @@ Hola - An extensible harness for Ollama for local AI agent development.
 from hola.ollama import (
     OllamaClient,
     ModelWarmer,
+    Role,
     tool,
     register_tool,
     get_tool,

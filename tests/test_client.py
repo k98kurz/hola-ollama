@@ -17,13 +17,14 @@ from hola.ollama.exceptions import (
 from hola.ollama.types import (
     ChatRequest,
     ChatResponse,
-    Message,
-    ModelInfo,
-    RunningModel,
-    GenerationOptions,
+    GenerateChunk,
     GenerateRequest,
     GenerateResponse,
-    GenerateChunk,
+    GenerationOptions,
+    Message,
+    ModelInfo,
+    Role,
+    RunningModel,
 )
 
 
@@ -69,7 +70,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         """Test streaming chat response."""
         request = ChatRequest(
             model="granite4.1:3b",
-            messages=[Message(role="user", content="Say hello")],
+            messages=[Message(role=Role.USER, content="Say hello")],
             options=GenerationOptions(num_predict=10),
         )
 
@@ -87,7 +88,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         """Test non-streaming chat response."""
         request = ChatRequest(
             model="granite4.1:3b",
-            messages=[Message(role="user", content="test")],
+            messages=[Message(role=Role.USER, content="test")],
         )
 
         mock_response = MagicMock()
@@ -222,7 +223,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         """Test retry logic with connection errors."""
         request = ChatRequest(
             model="granite4.1:3b",
-            messages=[Message(role="user", content="test")],
+            messages=[Message(role=Role.USER, content="test")],
         )
 
         call_count = [0]
@@ -247,7 +248,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         """Test retry logic with timeout errors."""
         request = ChatRequest(
             model="granite4.1:3b",
-            messages=[Message(role="user", content="test")],
+            messages=[Message(role=Role.USER, content="test")],
         )
 
         chunks = []
@@ -260,7 +261,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         """Test HTTP status error handling."""
         request = ChatRequest(
             model="granite4.1:3b",
-            messages=[Message(role="user", content="test")],
+            messages=[Message(role=Role.USER, content="test")],
         )
 
         class MockStreamContext:
@@ -312,7 +313,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         """Test end-to-end chat workflow (requires Ollama server)."""
         request = ChatRequest(
             model="granite4.1:3b",
-            messages=[Message(role="user", content="Say hello")],
+            messages=[Message(role=Role.USER, content="Say hello")],
             options=GenerationOptions(num_predict=10),
         )
 

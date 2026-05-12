@@ -1,16 +1,10 @@
 from enum import Enum
 from sqloquent import SqlModel, Default, RelatedModel
+from hola.ollama.types import Role
 import packify
 
 
 _empty = packify.pack({})
-
-
-class MType(Enum):
-    """Message type enumeration for conversation messages."""
-    USER = 'USER'
-    CLANKER = 'CLANKER'
-    TOOL = 'TOOL'
 
 
 class Message(SqlModel):
@@ -21,13 +15,13 @@ class Message(SqlModel):
     table: str = 'messages'
     id_column: str = 'id'
     columns: tuple[str,] = (
-        'id', 'session_id', 'sequence', 'type', 'model', 'call_id', 'content',
+        'id', 'session_id', 'sequence', 'role', 'model', 'call_id', 'content',
         'details'
     )
     id: str
     session_id: str
     sequence: int
-    type: str | Default['USER']
+    role: str | Default['user']
     model: str | None
     call_id: str | None
     content: str
@@ -35,15 +29,15 @@ class Message(SqlModel):
     session: RelatedModel
 
     @property
-    def type(self) -> MType:
-        """Return the message type as an `MType` enum. Can be set using the
-            setter to change the message type.
+    def role(self) -> Role:
+        """Return the message role as a `Role` enum. Can be set using the
+            setter to change the message role.
         """
-        return MType(self.data.get('type', 'USER'))
+        return Role(self.data.get('role', 'user'))
 
-    @type.setter
-    def type(self, val: MType) -> None:
-        self.data['type'] = val.value
+    @role.setter
+    def role(self, val: Role) -> None:
+        self.data['role'] = val.value
 
     @property
     def details(self) -> packify.SerializableType:

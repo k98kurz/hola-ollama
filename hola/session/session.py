@@ -6,14 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 from hola.ollama.client import OllamaClient
-from hola.ollama.types import Message as OMessage
+from hola.ollama.types import Message as OMessage, Role
 from hola.session.exceptions import (
     SessionDeleteError,
     SessionError,
     TempFileNotFoundError,
 )
 from hola.session.models import (
-    MType,
     Message as DBMessage,
     Memory,
     Session as DBSession,
@@ -55,7 +54,7 @@ class Session:
             m = DBMessage({
                 'session_id': self.session_id,
                 'sequence': self.sequence,
-                'type': MType(message.role).value,
+                'role': message.role.value,
                 'model': model,
                 'content': message.content,
             })
@@ -75,7 +74,7 @@ class Session:
                 sqb.equal('model', model)
 
             msgs = [
-                (m.model, OMessage(m.type.value, m.content))
+                (m.model, OMessage(m.role.value, m.content))
                 for m in sqb.take(limit)
             ]
             msgs.reverse()
@@ -89,11 +88,11 @@ class Session:
             self.sequence = 0
 
     def add_tool_output(self, call_id: str, result: object) -> None:
-        """Set tool output by call ID. Stored as Message with MType.TOOL."""
+        """Set tool output by call ID. Stored as Message with Role.TOOL."""
         with self.lock:
             m = DBMessage({
                 'session_id': self.session_id,
-                'type': MType.TOOL.value,
+                'role': Role.TOOL.value,
                 'content': '',
                 'call_id': call_id,
             })
@@ -113,7 +112,7 @@ class Session:
         """List all tool outputs."""
         with self.lock:
             outputs = {}
-            sqb = self.dbsession.messages().query().equal('type', MType.TOOL.value)
+            sqb = self.dbsession.messages().query().equal('role', Role.TOOL.value)
             for m in sqb.get():
                 call_id = m.call_id
                 result = m.details.get('result')

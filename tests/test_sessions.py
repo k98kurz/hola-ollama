@@ -29,13 +29,12 @@ from hola.session.exceptions import (
 )
 from hola.session.manager import _generate_session_id
 from hola.session.storage import initialize
-from hola.ollama.types import Message as OMessage
+from hola.ollama.types import Message as OMessage, Role
 
 
 
 class TestSessionCreation(unittest.TestCase):
     """Test cases for session creation and lifecycle."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -117,7 +116,6 @@ class TestSessionCreation(unittest.TestCase):
 
 class TestSessionManager(unittest.TestCase):
     """Test cases for session manager functions."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -213,7 +211,6 @@ class TestSessionManager(unittest.TestCase):
 
 class TestTempFileCRUD(unittest.TestCase):
     """Test cases for temporary file CRUD operations."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -328,7 +325,6 @@ class TestTempFileCRUD(unittest.TestCase):
 
 class TestTempFileErrorHandling(unittest.TestCase):
     """Test cases for temp file error handling."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -387,7 +383,6 @@ class TestTempFileErrorHandling(unittest.TestCase):
 
 class TestSessionMessages(unittest.TestCase):
     """Test cases for session message operations."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -400,7 +395,7 @@ class TestSessionMessages(unittest.TestCase):
 
     def test_add_message(self):
         """Test adding a single message."""
-        msg = OMessage(role="USER", content="Hello")
+        msg = OMessage(role=Role.USER, content="Hello")
         self.session.add_message("granite4.1:3b", msg)
 
         history = self.session.get_history()
@@ -411,9 +406,9 @@ class TestSessionMessages(unittest.TestCase):
     def test_add_multiple_messages(self):
         """Test adding multiple messages."""
         msgs = [
-            OMessage(role="USER", content="Hello"),
-            OMessage(role="CLANKER", content="Hi there"),
-            OMessage(role="USER", content="How are you?"),
+            OMessage(role=Role.USER, content="Hello"),
+            OMessage(role=Role.ASSISTANT, content="Hi there"),
+            OMessage(role=Role.USER, content="How are you?"),
         ]
         for msg in msgs:
             self.session.add_message("granite4.1:3b", msg)
@@ -426,7 +421,7 @@ class TestSessionMessages(unittest.TestCase):
         initial_seq = self.session.sequence
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role="USER", content=str(i))
+                "granite4.1:3b", OMessage(role=Role.USER, content=str(i))
             )
 
         assert self.session.sequence == initial_seq + 5, self.session.sequence
@@ -441,7 +436,7 @@ class TestSessionMessages(unittest.TestCase):
         for i in range(10):
             self.session.add_message(
                 f"model_{i % 3}",
-                OMessage(role="USER", content=f"Message {i}"),
+                OMessage(role=Role.USER, content=f"Message {i}"),
             )
 
         history = self.session.get_history(limit=10)
@@ -451,7 +446,7 @@ class TestSessionMessages(unittest.TestCase):
         """Test that limit parameter restricts message count."""
         for i in range(20):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role="USER", content=str(i))
+                "granite4.1:3b", OMessage(role=Role.USER, content=str(i))
             )
 
         history = self.session.get_history(limit=5)
@@ -461,7 +456,7 @@ class TestSessionMessages(unittest.TestCase):
         """Test filtering history by model."""
         for i in range(10):
             model = "model_a" if i % 2 == 0 else "model_b"
-            self.session.add_message(model, OMessage(role="USER", content=str(i)))
+            self.session.add_message(model, OMessage(role=Role.USER, content=str(i)))
 
         history_a = self.session.get_history(model="model_a")
         history_b = self.session.get_history(model="model_b")
@@ -473,7 +468,7 @@ class TestSessionMessages(unittest.TestCase):
         """Test that history is ordered by sequence."""
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role="USER", content=f"Msg {i}")
+                "granite4.1:3b", OMessage(role=Role.USER, content=f"Msg {i}")
             )
 
         history = self.session.get_history()
@@ -485,7 +480,7 @@ class TestSessionMessages(unittest.TestCase):
         """Test clearing message history."""
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role="USER", content=str(i))
+                "granite4.1:3b", OMessage(role=Role.USER, content=str(i))
             )
 
         self.session.clear_history()
@@ -497,7 +492,7 @@ class TestSessionMessages(unittest.TestCase):
         """Test that clearing history resets sequence."""
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role="USER", content=str(i))
+                "granite4.1:3b", OMessage(role=Role.USER, content=str(i))
             )
 
         self.session.clear_history()
@@ -506,7 +501,6 @@ class TestSessionMessages(unittest.TestCase):
 
 class TestSessionToolOutputs(unittest.TestCase):
     """Test cases for session tool output storage."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -572,7 +566,6 @@ class TestSessionToolOutputs(unittest.TestCase):
 
 class TestSessionMetadata(unittest.TestCase):
     """Test cases for session metadata operations."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -635,7 +628,6 @@ class TestSessionMetadata(unittest.TestCase):
 
 class TestSessionMemory(unittest.TestCase):
     """Test cases for session memory operations."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -700,7 +692,6 @@ class TestSessionMemory(unittest.TestCase):
 
 class TestSessionFSMData(unittest.TestCase):
     """Test cases for FSM state management."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -758,7 +749,6 @@ class TestSessionFSMData(unittest.TestCase):
 
 class TestSessionDeletion(unittest.TestCase):
     """Test cases for session deletion and cleanup."""
-
     def setUp(self):
         """Set up test fixtures."""
         self.mock_client = Mock()
@@ -834,7 +824,6 @@ class TestSessionDeletion(unittest.TestCase):
 
 class TestSessionThreadSafety(unittest.TestCase):
     """Test cases for concurrent session operations."""
-
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -922,7 +911,7 @@ class TestSessionThreadSafety(unittest.TestCase):
 
         def add_messages(thread_id):
             for i in range(10):
-                msg = OMessage(role="USER", content=f"Thread {thread_id}, Msg {i}")
+                msg = OMessage(role=Role.USER, content=f"Thread {thread_id}, Msg {i}")
                 self.session.add_message("granite4.1:3b", msg)
 
         for i in range(5):
@@ -972,7 +961,7 @@ class TestSessionThreadSafety(unittest.TestCase):
         def increment_counter():
             try:
                 self.session.add_message(
-                    "granite4.1:3b", OMessage(role="USER", content="test")
+                    "granite4.1:3b", OMessage(role=Role.USER, content="test")
                 )
                 counter[0] += 1
             except Exception as e:
@@ -994,7 +983,6 @@ class TestSessionThreadSafety(unittest.TestCase):
 
 class TestSessionIntegration(unittest.TestCase):
     """Test cases for integration scenarios."""
-
     def setUp(self):
         """Set up test fixtures."""
         self.mock_client = Mock()
@@ -1014,7 +1002,7 @@ class TestSessionIntegration(unittest.TestCase):
         retrieved_session = get_session(session_id, portable=True)
 
         retrieved_session.add_message(
-            "granite4.1:3b", OMessage(role="USER", content="Hello")
+            "granite4.1:3b", OMessage(role=Role.USER, content="Hello")
         )
         retrieved_session.memorize("name", "TestUser")
         retrieved_session.set_metadata("version", "1.0")
@@ -1034,7 +1022,7 @@ class TestSessionIntegration(unittest.TestCase):
         session = Session("mixed_test", self.mock_client, portable=True)
 
         session.add_message(
-            "granite4.1:3b", OMessage(role="USER", content="Hello")
+            "granite4.1:3b", OMessage(role=Role.USER, content="Hello")
         )
         session.create_temp_file("data.txt", "temp data")
 

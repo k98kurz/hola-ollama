@@ -5,7 +5,7 @@ Model warmer for keeping models loaded in memory.
 from typing import Self
 from hola.ollama.client import OllamaClient
 from hola.ollama.config import WarmerConfig
-from hola.ollama.types import ChatRequest, GenerationOptions, Message
+from hola.ollama.types import ChatRequest, GenerationOptions, Message, Role
 import asyncio
 import logging
 import threading
@@ -155,7 +155,7 @@ class ModelWarmer:
         """Send 1-token request to keep model loaded."""
         request = ChatRequest(
             model=model,
-            messages=[Message(role="user", content="Hi")],
+            messages=[Message(role=Role.USER, content="Hi")],
             options=GenerationOptions(num_predict=1),
             keep_alive=self._config.default_keep_alive,
         )

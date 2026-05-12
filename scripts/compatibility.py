@@ -6,7 +6,7 @@ import asyncio
 import time
 from hola.ollama.client import OllamaClient
 from hola.ollama.types import (
-    ChatRequest, GenerateRequest, Message, GenerationOptions
+    ChatRequest, GenerateRequest, GenerationOptions, Message, Role
 )
 
 
@@ -32,7 +32,7 @@ async def test_chat_endpoint(client: OllamaClient, model_name: str) -> str:
         start_time = time.time()
         request = ChatRequest(
             model=model_name,
-            messages=[Message(role="user", content="hi")],
+            messages=[Message(role=Role.USER, content="hi")],
             options=GenerationOptions(num_predict=5),
             stream=False,
         )

@@ -3,12 +3,21 @@ Core types for Ollama API compatibility.
 """
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Literal
+
+
+class Role(Enum):
+    """Message role enumeration for Ollama API compatibility."""
+    SYSTEM = 'system'
+    USER = 'user'
+    ASSISTANT = 'assistant'
+    TOOL = 'tool'
 
 
 @dataclass
 class Message:
-    role: Literal["USER", "CLANKER", "TOOL"]
+    role: Role
     content: str
     tool_calls: list["ToolCall"] | None = None
     tool_name: str | None = None
@@ -106,6 +115,7 @@ class RunningModel:
 class GenerateRequest:
     model: str
     prompt: str
+    system: str | None = None
     stream: bool = True
     options: GenerationOptions | None = None
     keep_alive: str | None = None

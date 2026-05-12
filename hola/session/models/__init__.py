@@ -3,7 +3,7 @@ Database models for session management using sqloquent ORM.
 """
 
 from .Memory import Memory
-from .Message import MType, Message
+from .Message import Message
 from .Session import Session
 from pathlib import Path
 from sqloquent import has_many, belongs_to

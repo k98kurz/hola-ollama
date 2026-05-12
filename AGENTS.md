@@ -20,6 +20,10 @@ pip install -e .          # Install package for most manual testing
 4. If you encounter anything requiring a major change in plans, stop and discuss
 5. Do not worry about backwards compatibility; this project is under development,
   incomplete, and has never been used anywhere.
+6. Do NOT use pytest. This project uses unittest EXCLUSIVELY.
+7. Do NOT worry about backwards compatibility. This project is WIP and unused. Just
+  make the changes.
+8. Do NOT waste time calling bash or python just to print out summaries.
 
 # Code Style
 
