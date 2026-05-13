@@ -7,7 +7,7 @@ local Ollama service. This is a library, not an application.
 # Setup
 
 ```bash
-source venv/bin/activate  # REQUIRED before all Python commands
+source venv/bin/activate  # REQUIRED before ALL Python commands
 pip install -e .          # Install package for most manual testing
 ```
 

@@ -39,7 +39,6 @@ from hola.session import (
     SessionLoadError,
     SessionNotFoundError,
     SessionSaveError,
-    SessionState,
     create_session,
     delete_session,
     get_session,

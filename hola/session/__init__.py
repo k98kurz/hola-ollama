@@ -26,4 +26,3 @@ from hola.session.fsm import (
     WorkflowState,
 )
 from hola.session.session import Session
-from hola.session.types import SessionState
