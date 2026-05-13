@@ -20,6 +20,33 @@ with deterministic execution guarantees and reasonable security measures.
 - [ ] Context gates definable at each workflow step
 - [ ] Rigid but extensible permission system
 
+## Testing
+
+First, clone the repo, set up the virtualenv, and install requirements.
+
+```bash
+git clone ...
+python -m venv venv/
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+For windows, replace `source venv/bin/activate` with `source venv/Scripts/activate`.
+
+Then run the test suite with the following:
+
+```bash
+find tests -name test_*.py -print -exec {} \;
+```
+
+or
+
+```bash
+python -m unittest
+```
+
+There are currently 197 tests.
+
 ## Contributing
 
 Check out the [Pycelium discord server](https://discord.gg/b2QFEJDX69). If you

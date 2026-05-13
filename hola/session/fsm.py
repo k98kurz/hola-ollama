@@ -26,12 +26,21 @@ class WorkflowEvent(Enum):
 
 class WorkflowFSM(FSM):
     """General-purpose workflow FSM with planning, execution, and review phases."""
-    
     initial_state = WorkflowState.INIT
     rules = set([
-        Transition(WorkflowState.INIT, WorkflowEvent.START, WorkflowState.PLANNING),
-        Transition(WorkflowState.PLANNING, WorkflowEvent.EXECUTE, WorkflowState.EXECUTING),
-        Transition(WorkflowState.EXECUTING, WorkflowEvent.REVIEW, WorkflowState.REVIEWING),
-        Transition(WorkflowState.REVIEWING, WorkflowEvent.REJECTED, WorkflowState.PLANNING),
-        Transition(WorkflowState.REVIEWING, WorkflowEvent.ACCEPTED, WorkflowState.DONE),
+        Transition(
+            WorkflowState.INIT, WorkflowEvent.START, WorkflowState.PLANNING
+        ),
+        Transition(
+            WorkflowState.PLANNING, WorkflowEvent.EXECUTE, WorkflowState.EXECUTING
+        ),
+        Transition(
+            WorkflowState.EXECUTING, WorkflowEvent.REVIEW, WorkflowState.REVIEWING
+        ),
+        Transition(
+            WorkflowState.REVIEWING, WorkflowEvent.REJECTED, WorkflowState.PLANNING
+        ),
+        Transition(
+            WorkflowState.REVIEWING, WorkflowEvent.ACCEPTED, WorkflowState.DONE
+        ),
     ])

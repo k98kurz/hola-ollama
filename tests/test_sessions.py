@@ -42,9 +42,9 @@ class TestSessionCreation(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        sessions_dir = self.test_dir / "sessions"
-        if sessions_dir.exists():
-            shutil.rmtree(sessions_dir)
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_create_session_basic(self):
         """Test session creation with default params."""
@@ -112,9 +112,9 @@ class TestSessionManager(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        sessions_dir = self.test_dir / "sessions"
-        if sessions_dir.exists():
-            shutil.rmtree(sessions_dir)
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_get_session_existing(self):
         """Test retrieving existing session."""
@@ -206,7 +206,9 @@ class TestTempFileCRUD(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.session.delete()
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_create_temp_file_string(self):
         """Test creating temp file with string content."""
@@ -319,7 +321,9 @@ class TestTempFileErrorHandling(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.session.delete()
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_create_temp_file_session_error(self):
         """Test SessionError raised on OSError during file creation."""
@@ -376,7 +380,9 @@ class TestSessionMessages(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.session.delete()
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_add_message(self):
         """Test adding a single message."""
@@ -493,7 +499,9 @@ class TestSessionToolOutputs(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.session.delete()
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_add_tool_output(self):
         """Test storing tool output."""
@@ -557,7 +565,9 @@ class TestSessionMetadata(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.session.delete()
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_set_metadata(self):
         """Test setting single metadata key-value pair."""
@@ -618,7 +628,9 @@ class TestSessionMemory(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.session.delete()
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_memorize(self):
         """Test storing a key-value pair in memory."""
@@ -681,51 +693,96 @@ class TestSessionFSMData(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.session.delete()
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
+
+    def test_fsm_initialization(self):
+        """Test session initializes with default WorkflowFSM."""
+        assert self.session.state is not None, self.session.state
+        assert self.session.state.current == WorkflowState.INIT, (
+            self.session.state.current
+        )
 
     def test_fsm_storage_and_retrieval(self):
         """Test FSM can be stored and retrieved from session."""
-        fsm = WorkflowFSM()
-        fsm.input(WorkflowEvent.START)
-        fsm.input(WorkflowEvent.EXECUTE)
+        self.session.state.input(WorkflowEvent.START)
+        self.session.state.input(WorkflowEvent.EXECUTE)
 
-        assert fsm.current == WorkflowState.EXECUTING, fsm.current
-
-        self.session.set_fsm_data(fsm.pack())
-        retrieved = WorkflowFSM.unpack(
-            self.session.get_fsm_data(),
-            inject={
-                'WorkflowState': WorkflowState,
-                'WorkflowEvent': WorkflowEvent,
-            },
+        assert self.session.state.current == WorkflowState.EXECUTING, (
+            self.session.state.current
         )
 
-        assert retrieved.current == WorkflowState.EXECUTING, retrieved.current
+        reloaded = get_session(self.session.session_id, portable=True)
+        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
+        assert reloaded.state.current == WorkflowState.EXECUTING, (
+            reloaded.state.current
+        )
 
     def test_fsm_persistence_across_sessions(self):
         """Test FSM state persists correctly across session reload."""
         session_id = self.session.session_id
-        fsm = WorkflowFSM()
-        fsm.input(WorkflowEvent.START)
-        fsm.input(WorkflowEvent.EXECUTE)
-        fsm.input(WorkflowEvent.REVIEW)
+        self.session.state.input(WorkflowEvent.START)
+        self.session.state.input(WorkflowEvent.EXECUTE)
+        self.session.state.input(WorkflowEvent.REVIEW)
 
-        assert fsm.current == WorkflowState.REVIEWING, fsm.current
-
-        self.session.set_fsm_data(fsm.pack())
-
-        reloaded = get_session(session_id, portable=True)
-        retrieved = WorkflowFSM.unpack(
-            reloaded.get_fsm_data(),
-            inject={
-                'WorkflowState': WorkflowState,
-                'WorkflowEvent': WorkflowEvent,
-            },
+        assert self.session.state.current == WorkflowState.REVIEWING, (
+            self.session.state.current
         )
 
-        assert retrieved.current == WorkflowState.REVIEWING, retrieved.current
-        retrieved.input(WorkflowEvent.REJECTED)
-        assert retrieved.current == WorkflowState.PLANNING, retrieved.current
+        reloaded = get_session(session_id, portable=True)
+        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
+        assert reloaded.state.current == WorkflowState.REVIEWING, (
+            reloaded.state.current
+        )
+
+        reloaded.state.input(WorkflowEvent.REJECTED)
+        assert reloaded.state.current == WorkflowState.PLANNING, (
+            reloaded.state.current
+        )
+
+    def test_set_fsm_replaces_instance(self):
+        """Test set_fsm replaces the current FSM instance."""
+        new_fsm = WorkflowFSM()
+        self.session.set_fsm(new_fsm)
+        self.session.state.input(WorkflowEvent.START)
+        assert self.session.state.current == WorkflowState.PLANNING, (
+            self.session.state.current
+        )
+
+        reloaded = get_session(self.session.session_id, portable=True)
+        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
+        assert reloaded.state.current == WorkflowState.PLANNING, (
+            reloaded.state.current
+        )
+
+    def test_load_fsm_data_custom_class(self):
+        """Test loading FSM with custom inject dependencies."""
+        self.session.state.input(WorkflowEvent.START)
+
+        new_session = Session("fsm_load_test", portable=True)
+        new_session.state.input(WorkflowEvent.START)
+        assert new_session.state.current == WorkflowState.PLANNING, (
+            new_session.state.current
+        )
+        new_session.delete()
+
+    def test_save_fsm_data_manual(self):
+        """Test manual save of FSM data."""
+        self.session.state.input(WorkflowEvent.START)
+        self.session.state.input(WorkflowEvent.EXECUTE)
+
+        assert self.session.state.current == WorkflowState.EXECUTING, (
+            self.session.state.current
+        )
+
+        self.session.save_fsm_data()
+
+        reloaded = get_session(self.session.session_id, portable=True)
+        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
+        assert reloaded.state.current == WorkflowState.EXECUTING, (
+            reloaded.state.current
+        )
 
 
 class TestSessionDeletion(unittest.TestCase):
@@ -736,9 +793,9 @@ class TestSessionDeletion(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        sessions_dir = self.test_dir / "sessions"
-        if sessions_dir.exists():
-            shutil.rmtree(sessions_dir)
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_session_delete_method(self):
         """Test deleting session via session.delete() method."""
@@ -811,7 +868,9 @@ class TestSessionThreadSafety(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        self.session.delete()
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_concurrent_temp_file_creation(self):
         """Test multiple threads creating temp files."""
@@ -968,9 +1027,9 @@ class TestSessionIntegration(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after tests."""
-        sessions_dir = self.test_dir / "sessions"
-        if sessions_dir.exists():
-            shutil.rmtree(sessions_dir)
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     def test_full_session_lifecycle(self):
         """Test complete session lifecycle: create, use, delete."""

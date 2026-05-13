@@ -5,6 +5,7 @@ Session class for Hola session management.
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
+from typing import Callable
 from hola.ollama.types import Message as OMessage, Role
 from hola.session.exceptions import (
     SessionDeleteError,
@@ -17,6 +18,12 @@ from hola.session.models import (
     Session as DBSession,
 )
 from hola.session.storage import _get_session_temp_dir, initialize
+from hola.session.fsm import (
+    FSM,
+    WorkflowFSM,
+    WorkflowState,
+    WorkflowEvent,
+)
 import packify
 import os
 
@@ -29,6 +36,7 @@ class Session:
     lock: Lock = field(default_factory=Lock)
     dbsession: DBSession = field(default=None)
     sequence: int = field(default=0)
+    state: FSM | None = field(default=None)
 
     def __post_init__(self) -> None:
         initialize(self.portable)
@@ -44,6 +52,12 @@ class Session:
             last_m = last_m_list[0]
             if last_m.sequence:
                 self.sequence = last_m.sequence + 1
+
+        if not self.dbsession.state:
+            self.state = WorkflowFSM()
+            auto_save = self._create_fsm_autosave_hook()
+            for transition in self.state.rules:
+                self.state.add_transition_hook(transition, auto_save)
 
     def add_message(self, model: str, message: OMessage) -> None:
         """Add a message to conversation history."""
@@ -118,18 +132,46 @@ class Session:
 
             return outputs
 
-    def get_fsm_data(self) -> bytes:
-        """Get the bytes serialized FSM data to be deserialized by the
-            unpack method of the FSM subclass.
-        """
-        return self.dbsession.state
+    def _create_fsm_autosave_hook(self) -> Callable:
+        session = self
+        def auto_save(transition, context, data):
+            with session.lock:
+                if session.dbsession is None:
+                    return
+                session.dbsession.state = session.state.pack()
+                session.dbsession.save()
+        return auto_save
 
-    def set_fsm_data(self, data: bytes) -> None:
-        """Set the serialized FSM bytes returned by the pack method of
-            the FSM subclass.
-        """
-        self.dbsession.state = data
-        self.dbsession.save()
+    def set_fsm(self, fsm: FSM) -> None:
+        """Replace the current FSM instance with a new one."""
+        with self.lock:
+            self.state = fsm
+
+            auto_save = self._create_fsm_autosave_hook()
+            for transition in self.state.rules:
+                self.state.add_transition_hook(transition, auto_save)
+
+            self.dbsession.state = self.state.pack()
+            self.dbsession.save()
+
+    def load_fsm_data(self, fsm_class: type[FSM], inject: dict = {}) -> None:
+        """Load FSM from storage with provided inject dependencies."""
+        with self.lock:
+            if not self.dbsession.state:
+                raise SessionError("No FSM data found in session")
+            self.state = fsm_class.unpack(self.dbsession.state, inject=inject)
+
+            auto_save = self._create_fsm_autosave_hook()
+            for transition in self.state.rules:
+                self.state.add_transition_hook(transition, auto_save)
+
+    def save_fsm_data(self) -> None:
+        """Save FSM state to storage."""
+        with self.lock:
+            if not self.state:
+                raise SessionError("No FSM instance to save")
+            self.dbsession.state = self.state.pack()
+            self.dbsession.save()
 
     def set_metadata(self, key: str, value: object) -> None:
         """Set metadata key-value pair."""
