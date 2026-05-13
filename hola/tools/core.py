@@ -4,7 +4,7 @@ Tool system for function registration and execution.
 
 from __future__ import annotations
 from types import UnionType
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 from hola.ollama.exceptions import ToolExecutionError
 from hola.tools.types import (
     ToolCall,
@@ -14,9 +14,152 @@ from hola.tools.types import (
 import asyncio
 import inspect
 import logging
+import re
+
+if TYPE_CHECKING:
+    from hola.session.session import Session
 
 
 logger = logging.getLogger(__name__)
+
+
+def _interpolate_template(
+        template: str,
+        session: "Session",
+    ) -> str:
+    """Interpolate template variables using session memories. Supports
+        ${key}, ${key.path}, and ${key[0]} syntax with backslash
+        escaping for literal ${}.
+    """
+    def replace_match(match: re.Match) -> str:
+        key_path = match.group(1)
+
+        tokens = []
+        current_token = ""
+        i = 0
+
+        while i < len(key_path):
+            char = key_path[i]
+            if char == '.':
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+                tokens.append('.')
+                i += 1
+            elif char == '[':
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+                tokens.append('[')
+                i += 1
+            elif char == ']':
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+                tokens.append(']')
+                i += 1
+            else:
+                current_token += char
+                i += 1
+
+        if current_token:
+            tokens.append(current_token)
+
+        base_key = tokens[0] if tokens else key_path
+
+        current = session.recall(base_key)
+
+        if current is None:
+            raise ToolExecutionError(
+                f"Memory key not found: {base_key}"
+            )
+
+        i = 1
+        while i < len(tokens):
+            token = tokens[i]
+
+            if token == '.':
+                i += 1
+                if i >= len(tokens):
+                    raise ToolExecutionError(
+                        "Invalid path: ends with dot"
+                    )
+                next_token = tokens[i]
+                if not isinstance(current, dict):
+                    raise ToolExecutionError(
+                        f"Cannot access key {next_token} on non-dict value"
+                    )
+                if next_token not in current:
+                    raise ToolExecutionError(
+                        f"Key {next_token} not found in nested structure"
+                    )
+                current = current[next_token]
+                i += 1
+
+            elif token == '[':
+                i += 1
+                if i >= len(tokens):
+                    raise ToolExecutionError(
+                        "Invalid path: unclosed bracket"
+                    )
+                index_token = tokens[i]
+                i += 1
+
+                if i >= len(tokens) or tokens[i] != ']':
+                    raise ToolExecutionError(
+                        "Invalid path: missing closing bracket"
+                    )
+                i += 1
+
+                if not isinstance(current, list):
+                    raise ToolExecutionError(
+                        f"Cannot index non-list value at {index_token}"
+                    )
+                try:
+                    idx = int(index_token)
+                except ValueError:
+                    raise ToolExecutionError(
+                        f"Invalid list index: {index_token}"
+                    )
+                if idx < 0 or idx >= len(current):
+                    raise ToolExecutionError(
+                        f"Index {idx} out of range for list of length "
+                        f"{len(current)}"
+                    )
+                current = current[idx]
+
+            else:
+                raise ToolExecutionError(
+                    f"Invalid path token: {token}"
+                )
+
+        return str(current)
+
+    result = re.sub(r'(?<!\\)\$\{([^}]+)\}', replace_match, template)
+    result = result.replace(r'\${', '${')
+
+    return result
+
+
+def _interpolate_arguments(
+        args: dict[str, Any],
+        session: "Session" | None,
+    ) -> dict[str, Any]:
+    """Recursively interpolate template variables in arguments."""
+    if session is None:
+        return args
+
+    def process_value(value: Any) -> Any:
+        if isinstance(value, str):
+            return _interpolate_template(value, session)
+        elif isinstance(value, list):
+            return [process_value(item) for item in value]
+        elif isinstance(value, dict):
+            return {k: process_value(v) for k, v in value.items()}
+        else:
+            return value
+
+    return {key: process_value(val) for key, val in args.items()}
 
 
 def _generate_schema(func: Callable[..., Any]) -> dict[str, Any]:
@@ -226,6 +369,7 @@ def _check_list_parameter_compatibility(
 async def _execute_nested_tool_call(
         tool_call: ToolCall,
         registry: ToolRegistry,
+        session: "Session" | None = None,
     ) -> Any:
     """Execute a nested tool call with its children first."""
     if tool_call.nested_calls:
@@ -236,6 +380,7 @@ async def _execute_nested_tool_call(
                 result = await _execute_nested_tool_call(
                     nested_call,
                     registry,
+                    session,
                 )
                 child_results.append(result)
             except Exception as e:
@@ -282,9 +427,10 @@ async def _execute_nested_tool_call(
                     arguments=args,
                 ),
             ),
+            session,
         )
 
-    return await registry.execute_tool_call(tool_call)
+    return await registry.execute_tool_call(tool_call, session)
 
 
 def _convert_arguments_for_tool(
@@ -370,9 +516,10 @@ class ToolRegistry:
     async def execute_tool_call(
             self,
             tool_call: ToolCall,
+            session: "Session" | None = None,
         ) -> Any:
         if tool_call.nested_calls:
-            return await _execute_nested_tool_call(tool_call, self)
+            return await _execute_nested_tool_call(tool_call, self, session)
 
         name = tool_call.function.name
         func = self._functions.get(name)
@@ -381,9 +528,17 @@ class ToolRegistry:
             raise ToolExecutionError(f"Tool not found: {name}")
 
         args = tool_call.function.arguments
+        original_args = args
+
+        if session is not None:
+            args = _interpolate_arguments(args, session)
+
         tool_def = self._tools.get(name)
 
         if tool_def is not None:
+            if session is not None and args != original_args:
+                args = _convert_arguments_for_tool(args, tool_def)
+
             try:
                 _validate_args(args, tool_def.parameters)
             except ToolExecutionError as e:
@@ -462,8 +617,11 @@ def list_tools() -> list[ToolDefinition]:
     return _registry.list_tools()
 
 
-async def execute_tool_call(tool_call: ToolCall) -> Any:
+async def execute_tool_call(
+        tool_call: ToolCall,
+        session: "Session" | None = None,
+    ) -> Any:
     """Execute tool call using global registry."""
     if tool_call.nested_calls:
-        return await _execute_nested_tool_call(tool_call, _registry)
-    return await _registry.execute_tool_call(tool_call)
+        return await _execute_nested_tool_call(tool_call, _registry, session)
+    return await _registry.execute_tool_call(tool_call, session)

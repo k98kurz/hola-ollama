@@ -3,7 +3,7 @@ Tests for tool system functionality and XML compatibility layer.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import Mock, patch
 import unittest
 from hola.tools import (
     ToolRegistry,
@@ -22,6 +22,10 @@ from hola.tools.compat import (
     handle_nested_calls,
     parse_tool_calls_from_xml,
     tools_to_xml,
+)
+from hola.tools.core import (
+    _interpolate_template,
+    _interpolate_arguments,
 )
 
 
@@ -974,6 +978,208 @@ class TestXMLCompatibility(unittest.TestCase):
         assert tool_calls[0].nested_calls is not None
         assert len(tool_calls[0].nested_calls) == 1
         result = asyncio.run(execute_tool_call(tool_calls[0]))
+        assert result == 20, result
+
+
+class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
+    """Test cases for template interpolation with session memories."""
+    def setUp(self):
+        """Set up test fixtures."""
+        self.registry = ToolRegistry()
+
+        @tool(name="echo", description="Echo a message")
+        def echo(message: str) -> str:
+            return message
+
+        self.session = Mock()
+        self.session.recall = Mock()
+
+    async def test_basic_interpolation(self):
+        """Test simple key interpolation."""
+        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+
+        result = _interpolate_template("Hello ${name}", self.session)
+        assert result == "Hello Alice", result
+
+    async def test_integer_value_conversion(self):
+        """Test that integer values are converted to strings."""
+        self.session.recall.side_effect = lambda key: 25 if key == "age" else None
+
+        result = _interpolate_template("Age: ${age}", self.session)
+        assert result == "Age: 25", result
+
+    async def test_dot_notation_dict(self):
+        """Test dot notation for nested dictionary access."""
+        self.session.recall.side_effect = lambda key: (
+            {"name": "Bob"} if key == "user" else None
+        )
+
+        result = _interpolate_template("User: ${user.name}", self.session)
+        assert result == "User: Bob", result
+
+    async def test_list_indexing(self):
+        """Test list indexing with bracket notation."""
+        self.session.recall.side_effect = lambda key: (
+            ["Alice", "Bob"] if key == "users" else None
+        )
+
+        result = _interpolate_template("First: ${users[0]}", self.session)
+        assert result == "First: Alice", result
+
+    async def test_nested_list_access(self):
+        """Test nested list and dict access."""
+        self.session.recall.side_effect = lambda key: (
+            {
+                "friends": [
+                    {"name": "Alice", "id": "123"},
+                    {"name": "Bob", "id": "456"},
+                ]
+            }
+            if key == "user"
+            else None
+        )
+
+        result = _interpolate_template(
+            "Friend: ${user.friends[0].name}, ID: ${user.friends[0].id}",
+            self.session
+        )
+        assert result == "Friend: Alice, ID: 123", result
+
+    async def test_multiple_interpolations(self):
+        """Test multiple interpolations in one string."""
+        self.session.recall.side_effect = lambda key: {
+            "name": "Alice",
+            "age": 25,
+        }.get(key)
+
+        result = _interpolate_template(
+            "Hello ${name}, age ${age}", self.session
+        )
+        assert result == "Hello Alice, age 25", result
+
+    async def test_missing_key_error(self):
+        """Test that missing keys raise ToolExecutionError."""
+        self.session.recall.return_value = None
+
+        with self.assertRaises(ToolExecutionError) as cm:
+            _interpolate_template("Hello ${missing}", self.session)
+
+        assert "not found" in str(cm.exception).lower(), str(cm.exception)
+
+    async def test_invalid_nested_path_error(self):
+        """Test error on invalid nested path."""
+        self.session.recall.side_effect = lambda key: {"name": "Alice"} if key == "user" else None
+
+        with self.assertRaises(ToolExecutionError) as cm:
+            _interpolate_template("${user.invalid}", self.session)
+
+        assert "not found" in str(cm.exception).lower(), str(cm.exception)
+
+    async def test_list_out_of_range_error(self):
+        """Test error when list index is out of range."""
+        self.session.recall.side_effect = lambda key: ["Alice"] if key == "users" else None
+
+        with self.assertRaises(ToolExecutionError) as cm:
+            _interpolate_template("${users[5]}", self.session)
+
+        assert "out of range" in str(cm.exception).lower(), str(cm.exception)
+
+    async def test_backslash_escaping(self):
+        """Test backslash escaping of template syntax."""
+        self.session.recall.return_value = None
+
+        result = _interpolate_template(r"Literal \${name}", self.session)
+        assert result == "Literal ${name}", result
+
+    async def test_dollar_before_interpolation(self):
+        """Test dollar signs before interpolation."""
+        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+
+        result = _interpolate_template("$${name}", self.session)
+        assert result == "$Alice", result
+
+    async def test_double_dollar_before_interpolation(self):
+        """Test double dollar signs before interpolation."""
+        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+
+        result = _interpolate_template("$$${name}", self.session)
+        assert result == "$$Alice", result
+
+    async def test_non_string_arguments_unchanged(self):
+        """Test that non-string arguments remain unchanged."""
+        self.session.recall.return_value = None
+
+        args = {"x": 123, "y": True, "z": 3.14}
+        result = _interpolate_arguments(args, self.session)
+        assert result == args, result
+
+    async def test_list_argument_interpolation(self):
+        """Test interpolation in list arguments."""
+        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+
+        args = {"data": [1, "${name}", 3]}
+        result = _interpolate_arguments(args, self.session)
+        assert result == {"data": [1, "Alice", 3]}, result
+
+    async def test_dict_argument_interpolation(self):
+        """Test interpolation in dict arguments."""
+        self.session.recall.side_effect = lambda key: "value" if key == "key" else None
+
+        args = {"nested": {"x": "${key}", "y": 1}}
+        result = _interpolate_arguments(args, self.session)
+        assert result == {"nested": {"x": "value", "y": 1}}, result
+
+    async def test_no_session_no_interpolation(self):
+        """Test that strings pass through unchanged when no session is provided."""
+        result = _interpolate_arguments({"msg": "${name}"}, None)
+        assert result == {"msg": "${name}"}, result
+
+    async def test_integration_with_tool_execution(self):
+        """Test interpolation in actual tool execution."""
+        @tool(name="greet", description="Greet someone")
+        def greet(name: str) -> str:
+            return f"Hello {name}"
+
+        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+
+        tool_call = ToolCall(
+            function=ToolCallFunction(
+                name="greet",
+                arguments={"name": "${name}"},
+            ),
+        )
+
+        result = await execute_tool_call(tool_call, self.session)
+        assert result == "Hello Alice", result
+
+    async def test_integration_with_nested_tool_calls(self):
+        """Test interpolation across nested tool calls."""
+        @tool(name="double", description="Double a number")
+        def double(x: int) -> int:
+            return x * 2
+
+        @tool(name="add_ten", description="Add ten")
+        def add_ten(data: int) -> int:
+            return data + 10
+
+        self.session.recall.side_effect = lambda key: "5" if key == "value" else None
+
+        inner_call = ToolCall(
+            function=ToolCallFunction(
+                name="double",
+                arguments={"x": "${value}"},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="add_ten",
+                arguments={},
+            ),
+            nested_calls=[inner_call],
+        )
+
+        result = await execute_tool_call(outer_call, self.session)
         assert result == 20, result
 
 
