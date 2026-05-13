@@ -2,6 +2,7 @@
 Tool system for function registration and execution.
 """
 
+from __future__ import annotations
 from types import UnionType
 from typing import Any, Callable
 from hola.ollama.exceptions import ToolExecutionError
@@ -204,22 +205,6 @@ def _convert_type(
     return value
 
 
-def _resolve_execution_order(
-        tool_call: ToolCall,
-    ) -> list[ToolCall]:
-    """Resolve execution order for nested tool calls using depth-first traversal."""
-    order = []
-
-    def _traverse(call: ToolCall) -> None:
-        if call.nested_calls:
-            for nested in call.nested_calls:
-                _traverse(nested)
-        order.append(call)
-
-    _traverse(tool_call)
-    return order
-
-
 def _check_list_parameter_compatibility(
         tool_def: ToolDefinition,
         num_children: int,
@@ -240,7 +225,7 @@ def _check_list_parameter_compatibility(
 
 async def _execute_nested_tool_call(
         tool_call: ToolCall,
-        registry: "ToolRegistry",
+        registry: ToolRegistry,
     ) -> Any:
     """Execute a nested tool call with its children first."""
     if tool_call.nested_calls:
@@ -438,11 +423,10 @@ _registry = ToolRegistry()
 
 
 def tool(
-    name: str,
-    description: str,
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        name: str,
+        description: str,
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to auto-register functions as tools."""
-
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         schema = _generate_schema(func)
 
@@ -461,9 +445,9 @@ def tool(
 
 
 def register_tool(
-    tool: ToolDefinition,
-    func: Callable[..., Any],
-) -> None:
+        tool: ToolDefinition,
+        func: Callable[..., Any],
+    ) -> None:
     """Register tool in global registry."""
     return _registry.register_tool(tool, func)
 
