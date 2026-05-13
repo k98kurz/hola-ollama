@@ -17,15 +17,56 @@ from hola.session.models import (
     Memory,
     Session as DBSession,
 )
-from hola.session.storage import _get_session_temp_dir, initialize
+from hola.session.storage import _get_session_temp_dir, initialize, _get_config
 from hola.session.fsm import (
     FSM,
     WorkflowFSM,
     WorkflowState,
     WorkflowEvent,
 )
+from hola.tools.types import Permission
 import packify
 import os
+import fnmatch
+
+
+def _match_path_with_glob(path: str, pattern: str) -> bool:
+    """Match path against glob pattern, supporting ** for recursive matching."""
+    path_parts = path.split('/')
+    pattern_parts = pattern.split('/')
+
+    i = 0
+    j = 0
+
+    while i < len(path_parts) and j < len(pattern_parts):
+        if pattern_parts[j] == '**':
+            if j + 1 == len(pattern_parts):
+                return True
+            while i < len(path_parts):
+                if _match_segment(
+                        path_parts[i], pattern_parts[j + 1]
+                    ):
+                    break
+                i += 1
+            if i == len(path_parts):
+                return False
+            i += 1
+            j += 2
+        elif _match_segment(path_parts[i], pattern_parts[j]):
+            i += 1
+            j += 1
+        else:
+            return False
+
+    if j == len(pattern_parts) - 1 and pattern_parts[j] == '**':
+        return True
+
+    return i == len(path_parts) and j == len(pattern_parts)
+
+
+def _match_segment(segment: str, pattern: str) -> bool:
+    """Match a single path segment against a pattern."""
+    return fnmatch.fnmatch(segment, pattern)
 
 
 @dataclass(slots=True)
@@ -37,6 +78,9 @@ class Session:
     dbsession: DBSession = field(default=None)
     sequence: int = field(default=0)
     state: FSM | None = field(default=None)
+    permissions_hook: Callable[[str, int, int], tuple[bool, list[str]]] | None = (
+        field(default=None)
+    )
 
     def __post_init__(self) -> None:
         initialize(self.portable)
@@ -298,3 +342,167 @@ class Session:
             from hola.session.storage import delete_session
             delete_session(self.session_id, self.portable)
             self.dbsession = None
+
+    def get_file_permission(self, path: Path | str) -> Permission:
+        """Get effective permission for a path. Checks exact matches and
+            glob patterns, applies inheritance, uses defaults, calls
+            permission hook if access would be denied.
+        """
+        path_obj = Path(path).absolute()
+        path_str = str(path_obj)
+        perms = self.dbsession.permissions
+        files = perms.get('files', {})
+        temp_dir = _get_config(self.portable).path(
+            f"sessions/{self.session_id}/temp"
+        )
+        temp_pattern = str(temp_dir / "**")
+
+        def check_permission(requested_bit: int) -> tuple[bool, list[str]]:
+            """Check if requested permission is granted. Returns
+                (allowed, denial_reasons).
+            """
+            # Check exact matches first
+            if path_str in files:
+                perm = files[path_str]
+                if (perm.value & requested_bit) != 0:
+                    return (True, [])
+                else:
+                    reasons = [
+                        f"Path {path_str} does not have {requested_bit} "
+                        "permission"
+                    ]
+                    return (False, reasons)
+
+            # Check glob patterns (more specific patterns first, first match wins)
+            sorted_patterns = sorted(
+                files.items(),
+                key=lambda x: (-len(x[0]), x[0])
+            )
+            for pattern, perm in sorted_patterns:
+                if _match_path_with_glob(path_str, pattern):
+                    if (perm.value & requested_bit) != 0:
+                        return (True, [])
+                    else:
+                        reasons = [
+                            f"Pattern {pattern} denies {requested_bit} "
+                            "permission"
+                        ]
+                        return (False, reasons)
+
+            # Check inheritance (parent directories)
+            check_path = path_obj.parent
+            while check_path != check_path.parent:
+                check_str = str(check_path)
+                if check_str in files:
+                    perm = files[check_str]
+                    if (perm.value & requested_bit) != 0:
+                        return (True, [])
+                    else:
+                        reasons = [
+                            f"Parent {check_str} denies "
+                            f"{requested_bit} permission"
+                        ]
+                        return (False, reasons)
+                sorted_patterns = sorted(
+                    files.items(),
+                    key=lambda x: (-len(x[0]), x[0])
+                )
+                for pattern, perm in sorted_patterns:
+                    if _match_path_with_glob(check_str, pattern):
+                        if (perm.value & requested_bit) != 0:
+                            return (True, [])
+                        else:
+                            reasons = [
+                                f"Pattern {pattern} on parent denies "
+                                f"{requested_bit} permission"
+                            ]
+                            return (False, reasons)
+                check_path = check_path.parent
+
+            # Apply default permissions
+            temp_dir_str = str(temp_dir)
+            if path_str.startswith(temp_dir_str):
+                if (7 & requested_bit) != 0:
+                    return (True, [])
+                else:
+                    reasons = [
+                        f"Default temp permissions deny {requested_bit}"
+                    ]
+                    return (False, reasons)
+            elif self.dbsession.cwd and path_str.startswith(
+                    self.dbsession.cwd
+                ):
+                if (4 & requested_bit) != 0:
+                    return (True, [])
+                else:
+                    reasons = [
+                        f"Default CWD permissions deny {requested_bit}"
+                    ]
+                    return (False, reasons)
+            else:
+                reasons = [f"No permissions granted for {path_str}"]
+                return (False, reasons)
+
+        # Check all permission bits and build Permission object
+        read_allowed, _ = check_permission(4)
+        write_allowed, _ = check_permission(2)
+        execute_allowed, _ = check_permission(1)
+
+        if read_allowed or write_allowed or execute_allowed:
+            return Permission.from_bits(read_allowed, write_allowed, execute_allowed)
+
+        # Call permission hook if access is denied
+        if self.permissions_hook is not None:
+            requested = 7
+            current = 0
+            allowed, denial_reasons = self.permissions_hook(
+                path_str, requested, current
+            )
+            if allowed:
+                return Permission(7)
+
+        # Default: no permissions
+        return Permission(0)
+
+    def set_permission(self, path: str, permission: Permission) -> None:
+        """Add or update permission for a path pattern."""
+        with self.lock:
+            normalized_path = str(Path(path).absolute())
+            perms = self.dbsession.permissions
+            if 'files' not in perms:
+                perms['files'] = {}
+            perms['files'][normalized_path] = permission
+            self.dbsession.permissions = perms
+            self.dbsession.save()
+
+    def remove_permission(self, path: str) -> None:
+        """Remove permission entry for a path pattern."""
+        with self.lock:
+            normalized_path = str(Path(path).absolute())
+            perms = self.dbsession.permissions
+            if 'files' in perms and normalized_path in perms['files']:
+                del perms['files'][normalized_path]
+                self.dbsession.permissions = perms
+                self.dbsession.save()
+
+    def set_permission_hook(
+            self,
+            func: Callable[[str, int, int], tuple[bool, list[str]]] | None
+        ) -> None:
+        """Register or clear the permission hook."""
+        with self.lock:
+            self.permissions_hook = func
+
+    def get_allowed_modules(self) -> list[str]:
+        """Return list of allowed Python modules."""
+        with self.lock:
+            perms = self.dbsession.permissions
+            return perms.get('modules', [])
+
+    def set_allowed_modules(self, mods: list[str]) -> None:
+        """Store allowed Python modules."""
+        with self.lock:
+            perms = self.dbsession.permissions
+            perms['modules'] = mods
+            self.dbsession.permissions = perms
+            self.dbsession.save()

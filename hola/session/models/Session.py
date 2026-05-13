@@ -1,4 +1,5 @@
 from sqloquent import SqlModel, RelatedCollection
+from hola.tools.types import Permission
 import packify
 
 
@@ -35,7 +36,10 @@ class Session(SqlModel):
             be set using the setter to serialize and store a new
             dictionary.
         """
-        return packify.unpack(self.data.get('permissions', None) or _empty)
+        return packify.unpack(
+            self.data.get('permissions', None) or _empty,
+            globals()
+        )
     @permissions.setter
     def permissions(self, val: dict[str, object]) -> None:
         self.data['permissions'] = packify.pack(val)
