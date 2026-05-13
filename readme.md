@@ -1,20 +1,69 @@
 # Hola
 
-An extensible harness for Ollama to enable development of robust, local AI agents.
+An extensible harness for Ollama to enable development of robust, local AI agents
+with deterministic execution guarantees and reasonable security measures.
 
-## Features
+## Features / Status
 
-- Finite State Machines for workflows
+- [x] Finite State Machines for workflows
 - Tool system
-  - Tool calling for tool-enabled models
-  - Tool workaround for models that do not natively support tools
-  - A few bundled tools: grep, ls, read, write, edit, append, memorize, recall, python (sandboxed)
-  - Tool system allows chaining of tools, passing outputs as inputs, e.g.
+  - [x] Tool calling for tool-enabled models
+  - [ ] XML-based workaround for models that do not natively support tools
+  - [ ] A few bundled tools: grep, ls, read, write, edit, append, memorize, recall, python (sandboxed)
+  - [x] Tool system allows chaining of tools, passing outputs as inputs, e.g.
     - `memorize("original-file", read("file.txt"))`
     - `write("backup.txt", recall("original-file"))`
-  - Tool system allows template interpolation of memorized values, e.g.
+  - [ ] Tool system allows template interpolation of memorized values, e.g.
     - `python("python code ${original-file}")
-- Benchmarking tools for testing models
-- Ability to include multiple models within an agentic workflow
-- Context gates definable at each workflow step
+- [ ] Benchmarking tools for testing models
+- [ ] Ability to include multiple models within an agentic workflow
+- [ ] Context gates definable at each workflow step
+- [ ] Rigid but extensible permission system
 
+## Contributing
+
+Check out the [Pycelium discord server](https://discord.gg/b2QFEJDX69). If you
+experience a problem, please discuss it on the Discord server. All suggestions
+for improvement are also welcome, and the best place for that is also Discord.
+If you experience a bug and do not use Discord, open an issue or discussion on
+Github.
+
+## Pycelium Reciprocal License
+
+Copyright (c) 2026 Jonathan Voss (k98kurz) / The Pycelium Company
+
+This software is licensed under the following conditions:
+
+1. Free Use: This software is free to use without payment or fee.
+
+2. Redistribution: This software may be distributed, redistributed, packaged,
+and included in other software projects or products, whether as source code or
+in any compiled or compressed form, so long as all copyright notices and license
+terms are preserved and included. In particular, derivative works must attribute
+the original project (and any forks if relevant) so that the end users/customers
+of a derivative work or a service provided in connection with a derivative work
+are made aware of the original project, applicable copyrights, and these license
+terms.
+
+3. Modifications: Any modifications or improvements made to the software source
+code must be made available as source code and distributed with this license.
+
+4. Contributions: Modifications and/or improvements may be contributed to the
+project. The project maintainer(s) may evaluate such modifications and/or
+improvements for fitness for potential integration into the original project.
+Contributors maintain their copyright over such modifications and improvements,
+and all such accepted contributions will be acknowledged via a contributor
+credits section unless the contributor explicitly waives this right.
+
+5. Relicensing: This software may also be licensed under different license terms
+so long as all copyright holders and contributors, or their heirs or assigns,
+have been provided 90 days notice and do not object.
+
+6. Disclaimer: This software is provided "as is". The copyright holders and
+contributors who license this software disclaim all warranties with regard to
+this software including all implied warranties of merchantability and fitness.
+In no event will the copyright holders and contributors be liable for any
+special, direct, indirect, or consequential damages or any damages whatsoever
+resulting from loss of use, data or profits, whether in an action of contract,
+negligence or other tortious action, arising out of or in connection with the
+use or performance of this software.

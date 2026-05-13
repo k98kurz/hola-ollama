@@ -1,0 +1,37 @@
+Copyright (c) 2026 Jonathan Voss (k98kurz) / The Pycelium Company
+
+This software is licensed under the following conditions:
+
+1. Free Use: This software is free to use without payment or fee.
+
+2. Redistribution: This software may be distributed, redistributed, packaged,
+and included in other software projects or products, whether as source code or
+in any compiled or compressed form, so long as all copyright notices and license
+terms are preserved and included. In particular, derivative works must attribute
+the original project (and any forks if relevant) so that the end users/customers
+of a derivative work or a service provided in connection with a derivative work
+are made aware of the original project, applicable copyrights, and these license
+terms.
+
+3. Modifications: Any modifications or improvements made to the software source
+code must be made available as source code and distributed with this license.
+
+4. Contributions: Modifications and/or improvements may be contributed to the
+project. The project maintainer(s) may evaluate such modifications and/or
+improvements for fitness for potential integration into the original project.
+Contributors maintain their copyright over such modifications and improvements,
+and all such accepted contributions will be acknowledged via a contributor
+credits section unless the contributor explicitly waives this right.
+
+5. Relicensing: This software may also be licensed under different license terms
+so long as all copyright holders and contributors, or their heirs or assigns,
+have been provided 90 days notice and do not object.
+
+6. Disclaimer: This software is provided "as is". The copyright holders and
+contributors who license this software disclaim all warranties with regard to
+this software including all implied warranties of merchantability and fitness.
+In no event will the copyright holders and contributors be liable for any
+special, direct, indirect, or consequential damages or any damages whatsoever
+resulting from loss of use, data or profits, whether in an action of contract,
+negligence or other tortious action, arising out of or in connection with the
+use or performance of this software.
