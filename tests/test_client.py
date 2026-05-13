@@ -21,6 +21,7 @@ from hola.ollama.types import (
     GenerateRequest,
     GenerateResponse,
     GenerationOptions,
+    LLMClient,
     Message,
     ModelInfo,
     Role,
@@ -63,6 +64,18 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         assert custom_client._config.timeout == 60.0, (
             custom_client._config.timeout,
             60.0,
+        )
+        await custom_client.close()
+
+    async def test_protocol_compatibility(self):
+        """Test that OllamaClient implements LLMClient Protocol."""
+        assert isinstance(self.client, LLMClient), (
+            "OllamaClient should be compatible with LLMClient Protocol"
+        )
+
+        custom_client = OllamaClient(base_url="http://localhost:11435")
+        assert isinstance(custom_client, LLMClient), (
+            "Custom OllamaClient should be compatible with LLMClient Protocol"
         )
         await custom_client.close()
 

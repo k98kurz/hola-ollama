@@ -3,8 +3,9 @@ Core types for Ollama API compatibility.
 """
 
 from __future__ import annotations
+from collections.abc import AsyncGenerator
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 from hola.errors import validated_dataclass
 from hola.tools.types import ToolCall, ToolDefinition
 
@@ -123,3 +124,48 @@ class GenerateResponse:
     prompt_eval_duration: int | None = None
     eval_count: int | None = None
     eval_duration: int | None = None
+
+
+@runtime_checkable
+class LLMClient(Protocol):
+    """Protocol for LLM client implementations."""
+
+    async def chat(
+            self, request: ChatRequest
+        ) -> AsyncGenerator[ChatResponseChunk, None]:
+        """Stream chat responses from the model."""
+        ...
+
+    def chat_sync(self, request: ChatRequest) -> ChatResponse:
+        """Non-streaming chat response from the model."""
+        ...
+
+    async def generate(
+            self, request: GenerateRequest
+        ) -> AsyncGenerator[GenerateChunk, None]:
+        """Stream text generation from the model."""
+        ...
+
+    def generate_sync(self, request: GenerateRequest) -> GenerateResponse:
+        """Non-streaming text generation from the model."""
+        ...
+
+    async def load_model(self, model: str, keep_alive: str = "24h") -> None:
+        """Explicitly load a model into memory."""
+        ...
+
+    async def unload_model(self, model: str) -> None:
+        """Explicitly unload a model from memory."""
+        ...
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List all available models."""
+        ...
+
+    async def list_running_models(self) -> list[RunningModel]:
+        """List currently loaded/running models."""
+        ...
+
+    async def close(self) -> None:
+        """Close the client and cleanup resources."""
+        ...
