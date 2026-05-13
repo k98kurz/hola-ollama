@@ -6,7 +6,7 @@ from __future__ import annotations
 from types import UnionType
 from typing import Any, Callable
 from hola.ollama.exceptions import ToolExecutionError
-from hola.ollama.types import (
+from hola.tools.types import (
     ToolCall,
     ToolCallFunction,
     ToolDefinition,

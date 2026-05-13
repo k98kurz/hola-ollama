@@ -8,7 +8,6 @@ from hola.ollama.exceptions import (
     OllamaConnectionError,
     OllamaModelError,
     OllamaRequestError,
-    ToolExecutionError,
 )
 from hola.ollama.config import (
     ClientConfig,
@@ -26,11 +25,12 @@ from hola.ollama.types import (
     ModelInfo,
     Role,
     RunningModel,
+)
+from hola.tools import (
     ToolCall,
     ToolCallFunction,
     ToolDefinition,
-)
-from hola.ollama.tools import (
+    ToolExecutionError,
     ToolRegistry,
     execute_tool_call,
     get_tool,

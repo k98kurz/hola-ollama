@@ -5,22 +5,18 @@ Tests for tool system functionality.
 import asyncio
 from unittest.mock import AsyncMock, patch
 import unittest
-from hola.ollama.tools import (
+from hola.tools import (
     ToolRegistry,
     tool,
     register_tool,
     get_tool,
     list_tools,
     execute_tool_call,
-)
-from hola.ollama.types import (
-    Message,
-    Role,
     ToolCall,
     ToolCallFunction,
     ToolDefinition,
+    ToolExecutionError,
 )
-from hola.ollama.exceptions import ToolExecutionError
 
 
 class TestTools(unittest.IsolatedAsyncioTestCase):

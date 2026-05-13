@@ -6,14 +6,7 @@ from hola.ollama import (
     OllamaClient,
     ModelWarmer,
     Role,
-    tool,
-    register_tool,
-    get_tool,
-    list_tools,
-    execute_tool_call,
     Message,
-    ToolDefinition,
-    ToolCall,
     GenerationOptions,
     ChatRequest,
     ChatResponseChunk,
@@ -29,6 +22,15 @@ from hola.ollama import (
     OllamaConnectionError,
     OllamaRequestError,
     OllamaModelError,
+)
+from hola.tools import (
+    tool,
+    register_tool,
+    get_tool,
+    list_tools,
+    execute_tool_call,
+    ToolDefinition,
+    ToolCall,
     ToolExecutionError,
 )
 from hola.session import (

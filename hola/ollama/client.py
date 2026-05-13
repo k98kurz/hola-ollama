@@ -24,9 +24,8 @@ from hola.ollama.types import (
     ModelInfo,
     Role,
     RunningModel,
-    ToolCall,
-    ToolCallFunction,
 )
+from hola.tools.types import ToolCall, ToolCallFunction
 import json
 import logging
 import httpx

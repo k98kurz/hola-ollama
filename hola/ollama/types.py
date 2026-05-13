@@ -6,6 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 from hola.errors import validated_dataclass
+from hola.tools.types import ToolCall, ToolDefinition
 
 
 class Role(Enum):
@@ -22,25 +23,6 @@ class Message:
     content: str
     tool_calls: list[ToolCall] | None = None
     tool_name: str | None = None
-
-
-@validated_dataclass
-class ToolDefinition:
-    name: str
-    description: str
-    parameters: dict[str, Any]
-
-
-@validated_dataclass
-class ToolCallFunction:
-    name: str
-    arguments: dict[str, Any]
-
-
-@validated_dataclass
-class ToolCall:
-    function: ToolCallFunction
-    nested_calls: list[ToolCall] | None = None
 
 
 @validated_dataclass

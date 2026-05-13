@@ -11,6 +11,8 @@ from hola.ollama.types import (
     GenerateResponse,
     Message,
     Role,
+)
+from hola.tools.types import (
     ToolCall,
     ToolCallFunction,
     ToolDefinition,
