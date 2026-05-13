@@ -16,3 +16,7 @@ from hola.tools.types import (
     ToolDefinition,
 )
 from hola.ollama.exceptions import ToolExecutionError
+from hola.tools.compat import (
+    tools_to_xml,
+    parse_tool_calls_from_xml,
+)

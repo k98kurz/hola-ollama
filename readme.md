@@ -8,7 +8,7 @@ with deterministic execution guarantees and reasonable security measures.
 - [x] Finite State Machines for workflows
 - Tool system
   - [x] Tool calling for tool-enabled models
-  - [ ] XML-based workaround for models that do not natively support tools
+  - [x] XML-based workaround for models that do not natively support tools
   - [ ] A few bundled tools: grep, ls, read, write, edit, append, memorize, recall, python (sandboxed)
   - [x] Tool system allows chaining of tools, passing outputs as inputs, e.g.
     - `memorize("original-file", read("file.txt"))`

@@ -1,5 +1,5 @@
 """
-Tests for tool system functionality.
+Tests for tool system functionality and XML compatibility layer.
 """
 
 import asyncio
@@ -17,11 +17,16 @@ from hola.tools import (
     ToolDefinition,
     ToolExecutionError,
 )
+from hola.tools.compat import (
+    convert_parameter_value,
+    handle_nested_calls,
+    parse_tool_calls_from_xml,
+    tools_to_xml,
+)
 
 
 class TestTools(unittest.IsolatedAsyncioTestCase):
     """Test cases for tool system."""
-
     def setUp(self):
         """Set up test fixtures."""
         self.registry = ToolRegistry()
@@ -618,6 +623,358 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         await execute_tool_call(call3)
 
         assert execution_order == ["first", "second", "third"], execution_order
+
+
+class TestXMLCompatibility(unittest.TestCase):
+    """Test cases for XML compatibility layer."""
+    def test_format_single_tool(self):
+        """Test formatting a single tool with simple parameters."""
+        tool_def = ToolDefinition(
+            name="add_numbers",
+            description="Adds two integers together",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "a": {"type": "integer"},
+                    "b": {"type": "integer"},
+                },
+                "required": ["a", "b"],
+            },
+        )
+        xml = tools_to_xml([tool_def])
+        assert "<tools>" in xml, xml
+        assert "</tools>" in xml, xml
+        assert "<tool name=\"add_numbers\">" in xml, xml
+        assert "<parameter name=\"a\">42</parameter>" in xml, xml
+        assert "<parameter name=\"b\">42</parameter>" in xml, xml
+        assert "<!-- add_numbers: Adds two integers together -->" in xml, xml
+
+    def test_format_array_parameters(self):
+        """Test formatting a tool with array parameters."""
+        tool_def = ToolDefinition(
+            name="concatenate",
+            description="Joins strings together",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "parts": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["parts"],
+            },
+        )
+        xml = tools_to_xml([tool_def])
+        assert "<tool name=\"concatenate\">" in xml, xml
+        assert xml.count("<parameter name=\"parts\">") == 2, xml
+        assert "<parameter name=\"parts\">\"example\"</parameter>" in xml, xml
+
+    def test_format_multiple_tools(self):
+        """Test formatting multiple tools."""
+        tool_def1 = ToolDefinition(
+            name="add_numbers",
+            description="Adds two integers",
+            parameters={
+                "type": "object",
+                "properties": {"x": {"type": "integer"}},
+                "required": ["x"],
+            },
+        )
+        tool_def2 = ToolDefinition(
+            name="multiply",
+            description="Multiplies two numbers",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "a": {"type": "number"},
+                    "b": {"type": "number"},
+                },
+                "required": ["a", "b"],
+            },
+        )
+        xml = tools_to_xml([tool_def1, tool_def2])
+        assert "<tool name=\"add_numbers\">" in xml, xml
+        assert "<tool name=\"multiply\">" in xml, xml
+        assert xml.count("<tool name=") == 2, xml
+
+    def test_format_boolean_parameters(self):
+        """Test formatting boolean parameters."""
+        tool_def = ToolDefinition(
+            name="toggle",
+            description="Toggle a feature",
+            parameters={
+                "type": "object",
+                "properties": {"enabled": {"type": "boolean"}},
+                "required": ["enabled"],
+            },
+        )
+        xml = tools_to_xml([tool_def])
+        assert "<parameter name=\"enabled\">true</parameter>" in xml, xml
+
+    def test_format_string_parameters(self):
+        """Test formatting string parameters."""
+        tool_def = ToolDefinition(
+            name="greet",
+            description="Say hello",
+            parameters={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+        )
+        xml = tools_to_xml([tool_def])
+        assert "<parameter name=\"name\">\"example\"</parameter>" in xml, xml
+
+    def test_format_number_parameters(self):
+        """Test formatting number (float) parameters."""
+        tool_def = ToolDefinition(
+            name="calculate",
+            description="Calculate something",
+            parameters={
+                "type": "object",
+                "properties": {"value": {"type": "number"}},
+                "required": ["value"],
+            },
+        )
+        xml = tools_to_xml([tool_def])
+        assert "<parameter name=\"value\">3.14</parameter>" in xml, xml
+
+    def test_format_empty_tool_list(self):
+        """Test formatting an empty list of tools."""
+        xml = tools_to_xml([])
+        assert xml == "<tools>\n</tools>", xml
+
+    def test_format_tool_without_properties(self):
+        """Test formatting a tool with no parameters."""
+        tool_def = ToolDefinition(
+            name="ping",
+            description="Simple ping",
+            parameters={"type": "object", "properties": {}},
+        )
+        xml = tools_to_xml([tool_def])
+        assert "<tool name=\"ping\">\n  </tool>" in xml, xml
+
+    def test_parse_simple_tool(self):
+        """Test parsing a simple tool call."""
+        xml_text = """
+        <tool name="add_numbers">
+            <parameter name="a">5</parameter>
+            <parameter name="b">3</parameter>
+        </tool>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "add_numbers"
+        assert tool_calls[0].function.arguments == {"a": 5, "b": 3}
+
+    def test_parse_multiple_tools(self):
+        """Test parsing multiple tool calls."""
+        xml_text = """
+        <tool name="add">
+            <parameter name="x">1</parameter>
+        </tool>
+        <tool name="subtract">
+            <parameter name="x">2</parameter>
+        </tool>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 2, len(tool_calls)
+        assert tool_calls[0].function.name == "add"
+        assert tool_calls[1].function.name == "subtract"
+
+    def test_parse_with_tools_root(self):
+        """Test parsing XML with <tools> root element."""
+        xml_text = """
+        <tools>
+            <tool name="test">
+                <parameter name="value">42</parameter>
+            </tool>
+        </tools>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "test"
+
+    def test_parse_with_malformed_calls(self):
+        """Test parsing XML with some malformed tool calls."""
+        xml_text = """
+        <tool name="valid">
+            <parameter name="x">1</parameter>
+        </tool>
+        <tool name="">
+        </tool>
+        <tool name="another_valid">
+            <parameter name="y">2</parameter>
+        </tool>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 2, len(tool_calls)
+        assert tool_calls[0].function.name == "valid"
+        assert tool_calls[1].function.name == "another_valid"
+
+    def test_parse_with_markdown(self):
+        """Test parsing tool calls from markdown code blocks."""
+        xml_text = """
+        Here's some text before.
+
+        ```xml
+        <tool name="test">
+            <parameter name="value">123</parameter>
+        </tool>
+        ```
+
+        And some text after.
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "test"
+
+    def test_parse_empty_xml(self):
+        """Test parsing empty XML."""
+        xml_text = ""
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 0, len(tool_calls)
+
+    def test_convert_parameter_value_booleans(self):
+        """Test boolean string conversion for compat layer."""
+        assert convert_parameter_value("true") is True
+        assert convert_parameter_value("false") is False
+        assert convert_parameter_value("yes") is True
+        assert convert_parameter_value("no") is False
+        assert convert_parameter_value("1") is True
+        assert convert_parameter_value("0") is False
+        assert convert_parameter_value("TRUE") is True
+        assert convert_parameter_value("FALSE") is False
+
+    def test_convert_parameter_value_numbers(self):
+        """Test numeric string conversion for compat layer."""
+        assert convert_parameter_value("42") == 42
+        assert convert_parameter_value("3.14") == 3.14
+        assert convert_parameter_value("-5") == -5
+        assert convert_parameter_value("0.5") == 0.5
+
+    def test_convert_parameter_value_strings(self):
+        """Test that non-convertible strings remain strings for compat layer."""
+        assert convert_parameter_value("hello") == "hello"
+        assert convert_parameter_value("not_a_number") == "not_a_number"
+        assert convert_parameter_value("maybe") == "maybe"
+
+    def test_parse_nested_calls(self):
+        """Test parsing nested tool calls."""
+        xml_text = """
+        <tool name="outer">
+            <parameter name="data">
+                <tool name="inner">
+                    <parameter name="x">5</parameter>
+                </tool>
+            </parameter>
+        </tool>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "outer"
+        assert tool_calls[0].nested_calls is not None
+        assert len(tool_calls[0].nested_calls) == 1
+        assert tool_calls[0].nested_calls[0].function.name == "inner"
+        assert tool_calls[0].nested_calls[0].function.arguments == {"x": 5}
+
+    def test_parse_multiple_nested_calls(self):
+        """Test parsing multiple nested tool calls."""
+        xml_text = """
+        <tool name="outer">
+            <parameter name="data1">
+                <tool name="inner1">
+                    <parameter name="x">1</parameter>
+                </tool>
+            </parameter>
+            <parameter name="data2">
+                <tool name="inner2">
+                    <parameter name="y">2</parameter>
+                </tool>
+            </parameter>
+        </tool>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "outer"
+        assert tool_calls[0].nested_calls is not None
+        assert len(tool_calls[0].nested_calls) == 2
+        assert tool_calls[0].nested_calls[0].function.name == "inner1"
+        assert tool_calls[0].nested_calls[1].function.name == "inner2"
+
+    def test_parse_no_nested_calls(self):
+        """Test parsing tool calls without nested calls."""
+        xml_text = """
+        <tool name="simple">
+            <parameter name="value">42</parameter>
+        </tool>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "simple"
+        assert tool_calls[0].nested_calls is None
+
+    def test_round_trip(self):
+        """Test round-trip: ToolDefinition → XML → ToolCall."""
+        tool_def = ToolDefinition(
+            name="add_numbers",
+            description="Adds two numbers",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "a": {"type": "integer"},
+                    "b": {"type": "integer"},
+                },
+                "required": ["a", "b"],
+            },
+        )
+        xml = tools_to_xml([tool_def])
+        xml_with_values = xml.replace("42", "5").replace('"example"', '"hello"')
+        tool_calls = parse_tool_calls_from_xml(xml_with_values)
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "add_numbers"
+        assert "a" in tool_calls[0].function.arguments
+        assert "b" in tool_calls[0].function.arguments
+
+    def test_execute_parsed_tools(self):
+        """Test executing tools parsed from XML."""
+        @tool(name="multiply", description="Multiply two numbers")
+        def multiply(a: int, b: int) -> int:
+            return a * b
+        xml_text = """
+        <tool name="multiply">
+            <parameter name="a">6</parameter>
+            <parameter name="b">7</parameter>
+        </tool>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 1, len(tool_calls)
+        result = asyncio.run(execute_tool_call(tool_calls[0]))
+        assert result == 42, result
+
+    def test_round_trip_with_nested_calls(self):
+        """Test round-trip with nested tool calls."""
+        @tool(name="double", description="Double a number")
+        def double(x: int) -> int:
+            return x * 2
+
+        @tool(name="add_ten", description="Add ten")
+        def add_ten(data: int) -> int:
+            return data + 10
+        xml_text = """
+        <tool name="add_ten">
+            <parameter name="data">
+                <tool name="double">
+                    <parameter name="x">5</parameter>
+                </tool>
+            </parameter>
+        </tool>
+        """
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "add_ten"
+        assert tool_calls[0].nested_calls is not None
+        assert len(tool_calls[0].nested_calls) == 1
+        result = asyncio.run(execute_tool_call(tool_calls[0]))
+        assert result == 20, result
 
 
 if __name__ == "__main__":
