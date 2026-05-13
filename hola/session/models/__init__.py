@@ -5,10 +5,23 @@ Database models for session management using sqloquent ORM.
 from .Memory import Memory
 from .Message import Message
 from .Session import Session
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from sqloquent import has_many, belongs_to
 from typing import Callable
+import logging
 import sqloquent.tools
+
+
+__all__ = [
+    'Memory',
+    'Message',
+    'Session',
+    'set_connection_string',
+    'publish_migrations',
+    'automigrate',
+]
 
 
 # set relations
@@ -46,9 +59,22 @@ def publish_migrations(
         with open(migration_folder_path / f'00_create_{name}.py', 'w') as f:
             f.write(m)
 
-def automigrate(migration_folder_path: str, db_file_path: str) -> None:
-    """Executes the sqloquent automigrate tool."""
-    sqloquent.tools.automigrate(migration_folder_path, db_file_path)
-
-# avoid exporting unrelated things
-del Callable, Path
+def automigrate(
+        migration_folder_path: str,
+        db_file_path: str,
+        logger: logging.Logger | None = None,
+        reprint: bool = False
+    ) -> None:
+    """Executes the sqloquent automigrate tool. Captures stdout and
+        optionally logs it. If a logger is provided, the captured output
+        will be logged. If reprint is True, the captured output will
+        also be printed to stdout.
+    """
+    captured_output = StringIO()
+    with redirect_stdout(captured_output):
+        sqloquent.tools.automigrate(migration_folder_path, db_file_path)
+    output = captured_output.getvalue()
+    if logger:
+        logger.info(output)
+    if reprint:
+        print(output, end='')
