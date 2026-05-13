@@ -3,12 +3,6 @@ Tests for session management functionality.
 """
 
 from pathlib import Path
-import os
-import shutil
-import threading
-import time
-import unittest
-import packify
 from hola.session import (
     Session,
     WorkflowEvent,
@@ -29,7 +23,12 @@ from hola.session.exceptions import (
 from hola.session.manager import _generate_session_id
 from hola.session.storage import initialize
 from hola.ollama.types import Message as OMessage, Role
-
+import os
+import shutil
+import threading
+import time
+import unittest
+import packify
 
 
 class TestSessionCreation(unittest.TestCase):
@@ -719,8 +718,8 @@ class TestSessionFSMData(unittest.TestCase):
             reloaded.state.current
         )
 
-    def test_fsm_persistence_across_sessions(self):
-        """Test FSM state persists correctly across session reload."""
+    def test_fsm_persistence_across_session_reloads(self):
+        """Test FSM state autosaves correctly across session reloads."""
         session_id = self.session.session_id
         self.session.state.input(WorkflowEvent.START)
         self.session.state.input(WorkflowEvent.EXECUTE)
@@ -737,6 +736,8 @@ class TestSessionFSMData(unittest.TestCase):
         )
 
         reloaded.state.input(WorkflowEvent.REJECTED)
+        reloaded = get_session(session_id, portable=True)
+        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
         assert reloaded.state.current == WorkflowState.PLANNING, (
             reloaded.state.current
         )
@@ -769,15 +770,14 @@ class TestSessionFSMData(unittest.TestCase):
 
     def test_save_fsm_data_manual(self):
         """Test manual save of FSM data."""
-        self.session.state.input(WorkflowEvent.START)
-        self.session.state.input(WorkflowEvent.EXECUTE)
+        self.session.save_fsm_data()
+        self.session.state.current = WorkflowState.EXECUTING
 
-        assert self.session.state.current == WorkflowState.EXECUTING, (
-            self.session.state.current
-        )
+        reloaded = get_session(self.session.session_id, portable=True)
+        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
+        assert reloaded.state.current == WorkflowState.INIT, reloaded.state.current
 
         self.session.save_fsm_data()
-
         reloaded = get_session(self.session.session_id, portable=True)
         reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
         assert reloaded.state.current == WorkflowState.EXECUTING, (
