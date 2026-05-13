@@ -25,7 +25,15 @@ pip install -e .          # Install package for most manual testing
   make the changes.
 8. Do NOT waste time calling bash or python just to print out summaries.
 9. Do NOT use `python -m unittest discover tests` when making small changes in
-  files covered by specific test files. Just execute the correct test file.
+  files covered by specific test files. Just execute the correct test file. DO
+  NOT RUN ALL TESTS ALL THE TIME.
+
+# Agent Memory
+
+Agents should record important information they encounter during their work in
+`docs/memory.md`. This helps preserve knowledge between sessions and prevents
+the need to rediscover information that has already been learned. See that file
+for details on what and how to record.
 
 # Code Style
 

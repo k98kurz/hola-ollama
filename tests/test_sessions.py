@@ -799,7 +799,7 @@ class TestSessionDeletion(unittest.TestCase):
         session = Session(session_id, self.mock_client, portable=True)
         session.create_temp_file("test.txt", "content")
 
-        temp_dir = Path.cwd() / ".hola" / "sessions" / session_id
+        temp_dir = Path.cwd() / ".hola" / "sessions" / session_id / "temp"
         assert temp_dir.exists(), temp_dir
 
         session.delete()
@@ -1075,7 +1075,7 @@ class TestSessionIntegration(unittest.TestCase):
         """Test that temp files are stored in correct location."""
         initialize(True)
         session = Session("path_test", self.mock_client, portable=True)
-        expected_dir = Path.cwd() / ".hola" / "sessions" / "path_test"
+        expected_dir = Path.cwd() / ".hola" / "sessions" / "path_test" / "temp"
 
         session.create_temp_file("test.txt", "content")
 

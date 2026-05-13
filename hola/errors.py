@@ -164,4 +164,4 @@ def validated_dataclass(cls):
             )
 
     cls.__post_init__ = __post_init__
-    return dataclass(cls)
+    return dataclass(cls, slots=True)

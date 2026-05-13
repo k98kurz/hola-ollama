@@ -14,7 +14,7 @@ with deterministic execution guarantees and reasonable security measures.
     - `memorize("original-file", read("file.txt"))`
     - `write("backup.txt", recall("original-file"))`
   - [ ] Tool system allows template interpolation of memorized values, e.g.
-    - `python("python code ${original-file}")
+    - `python("python code ${original-file}")`
 - [ ] Benchmarking tools for testing models
 - [ ] Ability to include multiple models within an agentic workflow
 - [ ] Context gates definable at each workflow step

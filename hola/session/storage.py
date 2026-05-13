@@ -29,7 +29,7 @@ def _get_db_path(portable: bool = False) -> Path:
 def _get_session_temp_dir(session_id: str, portable: bool = False) -> Path:
     """Get the temp directory path for a session."""
     config = _get_config(portable)
-    return config.path(f"sessions/{session_id}")
+    return config.path(f"sessions/{session_id}/temp")
 
 
 def initialize(portable: bool = False) -> None:
@@ -41,9 +41,7 @@ def initialize(portable: bool = False) -> None:
     db_dir = db_path.parent
     db_dir.mkdir(parents=True, exist_ok=True)
     db_path = str(db_path)
-
     set_connection_string(db_path)
-
 
     migrations_dir = _get_config(portable).path("migrations")
     migrations_dir.mkdir(parents=True, exist_ok=True)
