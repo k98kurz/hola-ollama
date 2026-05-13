@@ -5,7 +5,6 @@ Session class for Hola session management.
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
-from hola.ollama.client import OllamaClient
 from hola.ollama.types import Message as OMessage, Role
 from hola.session.exceptions import (
     SessionDeleteError,
@@ -26,7 +25,6 @@ import os
 class Session:
     """Agent session with state management and persistence."""
     session_id: str
-    client: OllamaClient
     portable: bool
     lock: Lock = field(default_factory=Lock)
     dbsession: DBSession = field(default=None)

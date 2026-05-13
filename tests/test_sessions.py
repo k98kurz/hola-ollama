@@ -3,7 +3,6 @@ Tests for session management functionality.
 """
 
 from pathlib import Path
-from unittest.mock import Mock
 import os
 import shutil
 import threading
@@ -39,7 +38,6 @@ class TestSessionCreation(unittest.TestCase):
         """Set up test fixtures."""
         initialize(True)
         self.test_tag = f"test_{time.time_ns()}"
-        self.mock_client = Mock()
         self.test_dir = Path.cwd() / ".hola"
 
     def tearDown(self):
@@ -50,10 +48,9 @@ class TestSessionCreation(unittest.TestCase):
 
     def test_create_session_basic(self):
         """Test session creation with default params."""
-        session = Session("test_session_1", self.mock_client, portable=True)
+        session = Session("test_session_1", portable=True)
 
         assert session.session_id == "test_session_1", session.session_id
-        assert session.client == self.mock_client, session.client
         assert session.portable is True, session.portable
         assert session.dbsession is not None, session.dbsession
         assert session.dbsession.id == "test_session_1", session.dbsession.id
@@ -94,18 +91,10 @@ class TestSessionCreation(unittest.TestCase):
 
         session.delete()
 
-    def test_create_session_with_custom_client(self):
-        """Test session creation with custom OllamaClient."""
-        custom_client = Mock()
-        session = Session("custom_client_test", custom_client, portable=True)
-
-        assert session.client == custom_client, session.client
-        session.delete()
-
     def test_session_initialization(self):
         """Test session dbsession and sequence initialization."""
         session_id = "init_test"
-        session = Session(session_id, self.mock_client, portable=True)
+        session = Session(session_id, portable=True)
 
         assert session.dbsession is not None, session.dbsession
         assert session.dbsession.id == session_id, session.dbsession.id
@@ -119,7 +108,6 @@ class TestSessionManager(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
         self.test_dir = Path.cwd() / ".hola"
 
     def tearDown(self):
@@ -214,8 +202,7 @@ class TestTempFileCRUD(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
-        self.session = Session("temp_test", self.mock_client, portable=True)
+        self.session = Session("temp_test", portable=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -328,8 +315,7 @@ class TestTempFileErrorHandling(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
-        self.session = Session("error_test", self.mock_client, portable=True)
+        self.session = Session("error_test", portable=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -386,8 +372,7 @@ class TestSessionMessages(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
-        self.session = Session("msg_test", self.mock_client, portable=True)
+        self.session = Session("msg_test", portable=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -504,8 +489,7 @@ class TestSessionToolOutputs(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
-        self.session = Session("tool_test", self.mock_client, portable=True)
+        self.session = Session("tool_test", portable=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -569,8 +553,7 @@ class TestSessionMetadata(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
-        self.session = Session("meta_test", self.mock_client, portable=True)
+        self.session = Session("meta_test", portable=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -631,8 +614,7 @@ class TestSessionMemory(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
-        self.session = Session("mem_test", self.mock_client, portable=True)
+        self.session = Session("mem_test", portable=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -695,8 +677,7 @@ class TestSessionFSMData(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
-        self.session = Session("fsm_test", self.mock_client, portable=True)
+        self.session = Session("fsm_test", portable=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -751,7 +732,6 @@ class TestSessionDeletion(unittest.TestCase):
     """Test cases for session deletion and cleanup."""
     def setUp(self):
         """Set up test fixtures."""
-        self.mock_client = Mock()
         self.test_dir = Path.cwd() / ".hola"
 
     def tearDown(self):
@@ -762,7 +742,7 @@ class TestSessionDeletion(unittest.TestCase):
 
     def test_session_delete_method(self):
         """Test deleting session via session.delete() method."""
-        session = Session("del_method_test", self.mock_client, portable=True)
+        session = Session("del_method_test", portable=True)
         session.delete()
 
         assert not session_exists("del_method_test", portable=True), (
@@ -771,7 +751,7 @@ class TestSessionDeletion(unittest.TestCase):
 
     def test_session_delete_clears_dbsession(self):
         """Test that session.delete() sets dbsession to None."""
-        session = Session("clear_test", self.mock_client, portable=True)
+        session = Session("clear_test", portable=True)
         session.delete()
 
         assert session.dbsession is None, session.dbsession
@@ -796,7 +776,7 @@ class TestSessionDeletion(unittest.TestCase):
     def test_delete_session_cleans_temp_dir(self):
         """Test that session deletion cleans up temp directory."""
         session_id = "temp_dir_test"
-        session = Session(session_id, self.mock_client, portable=True)
+        session = Session(session_id, portable=True)
         session.create_temp_file("test.txt", "content")
 
         temp_dir = Path.cwd() / ".hola" / "sessions" / session_id / "temp"
@@ -807,7 +787,7 @@ class TestSessionDeletion(unittest.TestCase):
 
     def test_delete_session_with_temp_files(self):
         """Test that temp files are cleaned up on deletion."""
-        session = Session("temp_files_test", self.mock_client, portable=True)
+        session = Session("temp_files_test", portable=True)
         session.create_temp_file("file1.txt", "content1")
         session.create_temp_file("file2.bin", b"bytes")
 
@@ -827,8 +807,7 @@ class TestSessionThreadSafety(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
-        self.mock_client = Mock()
-        self.session = Session("thread_test", self.mock_client, portable=True)
+        self.session = Session("thread_test", portable=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -985,7 +964,6 @@ class TestSessionIntegration(unittest.TestCase):
     """Test cases for integration scenarios."""
     def setUp(self):
         """Set up test fixtures."""
-        self.mock_client = Mock()
         self.test_dir = Path.cwd() / ".hola"
 
     def tearDown(self):
@@ -1019,7 +997,7 @@ class TestSessionIntegration(unittest.TestCase):
     def test_session_with_messages_and_temp_files(self):
         """Test session with mixed message and temp file operations."""
         initialize(True)
-        session = Session("mixed_test", self.mock_client, portable=True)
+        session = Session("mixed_test", portable=True)
 
         session.add_message(
             "granite4.1:3b", OMessage(role=Role.USER, content="Hello")
@@ -1056,8 +1034,8 @@ class TestSessionIntegration(unittest.TestCase):
     def test_multiple_sessions_isolated(self):
         """Test that multiple sessions don't interfere with each other."""
         initialize(True)
-        session1 = Session("iso_test_1", self.mock_client, portable=True)
-        session2 = Session("iso_test_2", self.mock_client, portable=True)
+        session1 = Session("iso_test_1", portable=True)
+        session2 = Session("iso_test_2", portable=True)
 
         session1.memorize("key", "value1")
         session2.memorize("key", "value2")
@@ -1074,7 +1052,7 @@ class TestSessionIntegration(unittest.TestCase):
     def test_temp_file_path_verification(self):
         """Test that temp files are stored in correct location."""
         initialize(True)
-        session = Session("path_test", self.mock_client, portable=True)
+        session = Session("path_test", portable=True)
         expected_dir = Path.cwd() / ".hola" / "sessions" / "path_test" / "temp"
 
         session.create_temp_file("test.txt", "content")
