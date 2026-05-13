@@ -2,6 +2,7 @@
 Core types for Ollama API compatibility.
 """
 
+from __future__ import annotations
 from enum import Enum
 from typing import Any
 from hola.errors import validated_dataclass
@@ -19,7 +20,7 @@ class Role(Enum):
 class Message:
     role: Role
     content: str
-    tool_calls: list["ToolCall"] | None = None
+    tool_calls: list[ToolCall] | None = None
     tool_name: str | None = None
 
 
@@ -39,7 +40,7 @@ class ToolCallFunction:
 @validated_dataclass
 class ToolCall:
     function: ToolCallFunction
-    nested_calls: list["ToolCall"] | None = None
+    nested_calls: list[ToolCall] | None = None
 
 
 @validated_dataclass

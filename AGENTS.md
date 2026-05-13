@@ -24,6 +24,8 @@ pip install -e .          # Install package for most manual testing
 7. Do NOT worry about backwards compatibility. This project is WIP and unused. Just
   make the changes.
 8. Do NOT waste time calling bash or python just to print out summaries.
+9. Do NOT use `python -m unittest discover tests` when making small changes in
+  files covered by specific test files. Just execute the correct test file.
 
 # Code Style
 
