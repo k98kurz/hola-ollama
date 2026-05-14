@@ -15,11 +15,10 @@ from hola.tools.types import (
     ToolCallFunction,
     ToolDefinition,
 )
-from hola.tools.protocols import SessionProtocol
 from hola.ollama.exceptions import ToolExecutionError
 from hola.tools.compat import (
     tools_to_xml,
     parse_tool_calls_from_xml,
 )
 from hola.tools.bundled import *  # Registers all bundled tools
-from hola.tools.python_executor import python  # Registers python tool
+from hola.tools.python import python  # Registers python tool

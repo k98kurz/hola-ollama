@@ -6,12 +6,12 @@ from __future__ import annotations
 from types import UnionType
 from typing import Any, Callable
 from hola.ollama.exceptions import ToolExecutionError
+from hola.protocols import SessionProtocol
 from hola.tools.types import (
     ToolCall,
     ToolCallFunction,
     ToolDefinition,
 )
-from hola.tools.protocols import SessionProtocol
 import asyncio
 import inspect
 import logging

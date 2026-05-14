@@ -7,8 +7,8 @@ from io import StringIO
 from multiprocessing import Process, Queue
 from typing import Any
 from hola.errors import PermissionDeniedError, VerificationException
+from hola.protocols import SessionProtocol
 from hola.tools.core import tool
-from hola.tools.protocols import SessionProtocol
 import ast
 import builtins
 import os
@@ -28,6 +28,7 @@ DEFAULT_ALLOWED_MODULES = [
     're',
     'statistics',
     'struct',
+    'time',
     'typing',
     # 3rd party libs
     'autodox',

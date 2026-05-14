@@ -4,7 +4,6 @@ Session class for Hola session management.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import Lock
 from typing import Callable
 from hola.ollama.types import Message as OMessage, Role
 from hola.session.exceptions import (
@@ -74,7 +73,6 @@ class Session:
     """Agent session with state management and persistence."""
     session_id: str
     portable: bool
-    lock: Lock = field(default_factory=Lock)
     dbsession: DBSession = field(default=None)
     sequence: int = field(default=0)
     state: FSM | None = field(default=None)
@@ -110,177 +108,160 @@ class Session:
 
     def add_message(self, model: str, message: OMessage) -> None:
         """Add a message to conversation history."""
-        with self.lock:
-            self.sequence += 1
-            m = DBMessage({
-                'session_id': self.session_id,
-                'sequence': self.sequence,
-                'role': message.role.value,
-                'model': model,
-                'content': message.content,
-            })
-            m.details = {
-                'tool_name': message.tool_name,
-                'tool_calls': message.tool_calls,
-            }
-            m.save()
+        self.sequence += 1
+        m = DBMessage({
+            'session_id': self.session_id,
+            'sequence': self.sequence,
+            'role': message.role.value,
+            'model': model,
+            'content': message.content,
+        })
+        m.details = {
+            'tool_name': message.tool_name,
+            'tool_calls': message.tool_calls,
+        }
+        m.save()
 
     def get_history(
             self, model: str | None = None, limit: int = 10,
         ) -> list[tuple[str, OMessage]]:
         """Get conversation history, optionally filtered by model."""
-        with self.lock:
-            sqb = self.dbsession.messages().query().order_by('sequence', 'desc')
-            if model is not None:
-                sqb.equal('model', model)
+        sqb = self.dbsession.messages().query().order_by('sequence', 'desc')
+        if model is not None:
+            sqb.equal('model', model)
 
-            msgs = [
-                (m.model, OMessage(m.role, m.content))
-                for m in sqb.take(limit)
-            ]
-            msgs.reverse()
-            return msgs
+        msgs = [
+            (m.model, OMessage(m.role, m.content))
+            for m in sqb.take(limit)
+        ]
+        msgs.reverse()
+        return msgs
 
     def clear_history(self) -> None:
         """Clear conversation history."""
-        with self.lock:
-            sqb = self.dbsession.messages().query()
-            sqb.delete()
-            self.sequence = 0
+        sqb = self.dbsession.messages().query()
+        sqb.delete()
+        self.sequence = 0
 
     def add_tool_output(self, call_id: str, result: object) -> None:
         """Set tool output by call ID. Stored as Message with Role.TOOL."""
-        with self.lock:
-            m = DBMessage({
-                'session_id': self.session_id,
-                'role': Role.TOOL.value,
-                'content': '',
-                'call_id': call_id,
-            })
-            m.details = {'result': result}
-            m.save()
+        m = DBMessage({
+            'session_id': self.session_id,
+            'role': Role.TOOL.value,
+            'content': '',
+            'call_id': call_id,
+        })
+        m.details = {'result': result}
+        m.save()
 
     def get_tool_output(self, call_id: str) -> object | None:
         """Get tool output by call ID."""
-        with self.lock:
-            sqb = self.dbsession.messages().query().equal('call_id', call_id)
-            call = sqb.first()
-            if call:
-                return call.details.get('result')
-            return None
+        sqb = self.dbsession.messages().query().equal('call_id', call_id)
+        call = sqb.first()
+        if call:
+            return call.details.get('result')
+        return None
 
     def list_tool_outputs(self) -> dict[str, object]:
         """List all tool outputs."""
-        with self.lock:
-            outputs = {}
-            sqb = self.dbsession.messages().query().equal('role', Role.TOOL.value)
-            for m in sqb.get():
-                call_id = m.call_id
-                result = m.details.get('result')
-                outputs[call_id] = result
+        outputs = {}
+        sqb = self.dbsession.messages().query().equal('role', Role.TOOL.value)
+        for m in sqb.get():
+            call_id = m.call_id
+            result = m.details.get('result')
+            outputs[call_id] = result
 
-            return outputs
+        return outputs
 
     def _create_fsm_autosave_hook(self) -> Callable:
         session = self
         def auto_save(transition, context, data):
-            with session.lock:
-                if session.dbsession is None:
-                    return
-                session.dbsession.state = session.state.pack()
-                session.dbsession.save()
+            if session.dbsession is None:
+                return
+            session.dbsession.state = session.state.pack()
+            session.dbsession.save()
         return auto_save
 
     def set_fsm(self, fsm: FSM) -> None:
         """Replace the current FSM instance with a new one."""
-        with self.lock:
-            self.state = fsm
+        self.state = fsm
 
-            auto_save = self._create_fsm_autosave_hook()
-            for transition in self.state.rules:
-                self.state.add_transition_hook(transition, auto_save)
+        auto_save = self._create_fsm_autosave_hook()
+        for transition in self.state.rules:
+            self.state.add_transition_hook(transition, auto_save)
 
-            self.dbsession.state = self.state.pack()
-            self.dbsession.save()
+        self.dbsession.state = self.state.pack()
+        self.dbsession.save()
 
     def load_fsm_data(self, fsm_class: type[FSM], inject: dict = {}) -> None:
         """Load FSM from storage with provided inject dependencies."""
-        with self.lock:
-            if not self.dbsession.state:
-                raise SessionError("No FSM data found in session")
-            self.state = fsm_class.unpack(self.dbsession.state, inject=inject)
+        if not self.dbsession.state:
+            raise SessionError("No FSM data found in session")
+        self.state = fsm_class.unpack(self.dbsession.state, inject=inject)
 
-            auto_save = self._create_fsm_autosave_hook()
-            for transition in self.state.rules:
-                self.state.add_transition_hook(transition, auto_save)
+        auto_save = self._create_fsm_autosave_hook()
+        for transition in self.state.rules:
+            self.state.add_transition_hook(transition, auto_save)
 
     def save_fsm_data(self) -> None:
         """Save FSM state to storage."""
-        with self.lock:
-            if not self.state:
-                raise SessionError("No FSM instance to save")
-            self.dbsession.state = self.state.pack()
-            self.dbsession.save()
+        if not self.state:
+            raise SessionError("No FSM instance to save")
+        self.dbsession.state = self.state.pack()
+        self.dbsession.save()
 
     def set_metadata(self, key: str, value: object) -> None:
         """Set metadata key-value pair."""
-        with self.lock:
-            metadata = self.dbsession.metadata
-            metadata[key] = value
-            self.dbsession.metadata = metadata
-            self.dbsession.save()
+        metadata = self.dbsession.metadata
+        metadata[key] = value
+        self.dbsession.metadata = metadata
+        self.dbsession.save()
 
     def get_metadata(
             self, key: str, default: object = None
         ) -> object:
         """Get metadata value by key."""
-        with self.lock:
-            return self.dbsession.metadata.get(key, default)
+        return self.dbsession.metadata.get(key, default)
 
     def list_metadata(self) -> dict[str, object]:
         """List all metadata."""
-        with self.lock:
-            return self.dbsession.metadata
+        return self.dbsession.metadata
 
     def memorize(self, key: str, value: object) -> None:
         """Memorize a key-value pair."""
-        with self.lock:
-            memory = self.dbsession.memories().query().equal('name', key).first()
+        memory = self.dbsession.memories().query().equal('name', key).first()
 
-            if memory:
-                memory.content = value
-                memory.save()
-            else:
-                memory = Memory({
-                    'id': Memory.generate_id(),
-                    'session_id': self.session_id,
-                    'name': key,
-                })
-                memory.content = value
-                memory.save()
+        if memory:
+            memory.content = value
+            memory.save()
+        else:
+            memory = Memory({
+                'id': Memory.generate_id(),
+                'session_id': self.session_id,
+                'name': key,
+            })
+            memory.content = value
+            memory.save()
 
     def recall(self, key: str) -> object:
         """Recall a memorized value by key."""
-        with self.lock:
-            memory = self.dbsession.memories().query().equal('name', key).first()
-            if memory:
-                return memory.content
-            return None
+        memory = self.dbsession.memories().query().equal('name', key).first()
+        if memory:
+            return memory.content
+        return None
 
     def forget(self, key: str) -> None:
         """Forget a memorized key-value pair."""
-        with self.lock:
-            memory = self.dbsession.memories().query().equal('name', key).first()
-            if memory:
-                memory.delete()
+        memory = self.dbsession.memories().query().equal('name', key).first()
+        if memory:
+            memory.delete()
 
     def list_memories(self) -> dict[str, object]:
         """List all memorized key-value pairs."""
-        with self.lock:
-            return {
-                mem.name: mem.content
-                for mem in self.dbsession.memories().query().get()
-            }
+        return {
+            mem.name: mem.content
+            for mem in self.dbsession.memories().query().get()
+        }
 
     def create_temp_file(
             self, filename: str, content: bytes | str
@@ -288,65 +269,60 @@ class Session:
         """Create a temporary file in the session's temp directory.
             Returns the full path to the created file.
         """
-        with self.lock:
-            temp_dir = _get_session_temp_dir(self.session_id, self.portable)
-            temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = _get_session_temp_dir(self.session_id, self.portable)
+        temp_dir.mkdir(parents=True, exist_ok=True)
 
-            file_path = temp_dir / filename
-            try:
-                if isinstance(content, str):
-                    file_path.write_text(content)
-                else:
-                    file_path.write_bytes(content)
-            except OSError as e:
-                raise SessionError(f"Failed to create temp file: {e}")
+        file_path = temp_dir / filename
+        try:
+            if isinstance(content, str):
+                file_path.write_text(content)
+            else:
+                file_path.write_bytes(content)
+        except OSError as e:
+            raise SessionError(f"Failed to create temp file: {e}")
 
-            return file_path
+        return file_path
 
     def read_temp_file(self, filename: str) -> bytes:
         """Read a temporary file as bytes."""
-        with self.lock:
-            temp_dir = _get_session_temp_dir(self.session_id, self.portable)
-            file_path = temp_dir / filename
+        temp_dir = _get_session_temp_dir(self.session_id, self.portable)
+        file_path = temp_dir / filename
 
-            if not file_path.exists():
-                raise TempFileNotFoundError(f"Temp file not found: {filename}")
+        if not file_path.exists():
+            raise TempFileNotFoundError(f"Temp file not found: {filename}")
 
-            try:
-                return file_path.read_bytes()
-            except OSError as e:
-                raise SessionError(f"Failed to read temp file: {e}")
+        try:
+            return file_path.read_bytes()
+        except OSError as e:
+            raise SessionError(f"Failed to read temp file: {e}")
 
     def delete_temp_file(self, filename: str) -> None:
         """Delete a temporary file."""
-        with self.lock:
-            temp_dir = _get_session_temp_dir(self.session_id, self.portable)
-            file_path = temp_dir / filename
+        temp_dir = _get_session_temp_dir(self.session_id, self.portable)
+        file_path = temp_dir / filename
 
-            if not file_path.exists():
-                raise TempFileNotFoundError(f"Temp file not found: {filename}")
+        if not file_path.exists():
+            raise TempFileNotFoundError(f"Temp file not found: {filename}")
 
-            try:
-                file_path.unlink()
-            except OSError as e:
-                raise SessionError(f"Failed to delete temp file: {e}")
+        try:
+            file_path.unlink()
+        except OSError as e:
+            raise SessionError(f"Failed to delete temp file: {e}")
 
     def list_temp_files(self) -> list[str]:
         """List all temporary files in the session's temp directory."""
-        with self.lock:
-            temp_dir = _get_session_temp_dir(self.session_id, self.portable)
+        temp_dir = _get_session_temp_dir(self.session_id, self.portable)
 
-            if not temp_dir.exists():
-                return []
+        if not temp_dir.exists():
+            return []
 
-            return [f.name for f in temp_dir.iterdir() if f.is_file()]
+        return [f.name for f in temp_dir.iterdir() if f.is_file()]
 
     def delete(self) -> None:
         """Delete session and its storage."""
-        with self.lock:
-            from hola.session.storage import delete_session
-            delete_session(self.session_id, self.portable)
-            self.dbsession = None
+        from hola.session.storage import delete_session
+        delete_session(self.session_id, self.portable)
+        self.dbsession = None
 
     def get_file_permission(self, path: Path | str) -> Permission:
         """Get effective permission for a path. Checks exact matches and
@@ -471,43 +447,47 @@ class Session:
 
     def set_permission(self, path: str, permission: Permission) -> None:
         """Add or update permission for a path pattern."""
-        with self.lock:
-            normalized_path = str(Path(path).absolute())
-            perms = self.dbsession.permissions
-            if 'files' not in perms:
-                perms['files'] = {}
-            perms['files'][normalized_path] = permission
-            self.dbsession.permissions = perms
-            self.dbsession.save()
+        normalized_path = str(Path(path).absolute())
+        perms = self.dbsession.permissions
+        if 'files' not in perms:
+            perms['files'] = {}
+        perms['files'][normalized_path] = permission
+        self.dbsession.permissions = perms
+        self.dbsession.save()
 
     def remove_permission(self, path: str) -> None:
         """Remove permission entry for a path pattern."""
-        with self.lock:
-            normalized_path = str(Path(path).absolute())
-            perms = self.dbsession.permissions
-            if 'files' in perms and normalized_path in perms['files']:
-                del perms['files'][normalized_path]
-                self.dbsession.permissions = perms
-                self.dbsession.save()
+        normalized_path = str(Path(path).absolute())
+        perms = self.dbsession.permissions
+        if 'files' in perms and normalized_path in perms['files']:
+            del perms['files'][normalized_path]
+            self.dbsession.permissions = perms
+            self.dbsession.save()
 
     def set_permission_hook(
             self,
             func: Callable[[str, int, int], tuple[bool, list[str]]] | None
         ) -> None:
         """Register or clear the permission hook."""
-        with self.lock:
-            self.permissions_hook = func
+        self.permissions_hook = func
+
+    @property
+    def file_permissions(self) -> dict[str, dict[str, bool]]:
+        """Get all file permissions as a simple dict format."""
+        perms = self.dbsession.permissions.get('files', {})
+        return {
+            path: {'read': bool(perm.value & 4), 'write': bool(perm.value & 2)}
+            for path, perm in perms.items()
+        }
 
     def get_allowed_modules(self) -> list[str]:
         """Return list of allowed Python modules."""
-        with self.lock:
-            perms = self.dbsession.permissions
-            return perms.get('modules', [])
+        perms = self.dbsession.permissions
+        return perms.get('modules', [])
 
     def set_allowed_modules(self, mods: list[str]) -> None:
         """Store allowed Python modules."""
-        with self.lock:
-            perms = self.dbsession.permissions
-            perms['modules'] = mods
-            self.dbsession.permissions = perms
-            self.dbsession.save()
+        perms = self.dbsession.permissions
+        perms['modules'] = mods
+        self.dbsession.permissions = perms
+        self.dbsession.save()

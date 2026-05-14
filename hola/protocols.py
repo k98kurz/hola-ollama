@@ -15,6 +15,11 @@ class SessionProtocol(Protocol):
         """Current working directory."""
         ...
 
+    @property
+    def file_permissions(self) -> dict[str, dict[str, bool]]:
+        """Get all file permissions as a simple dict format."""
+        ...
+
     def get_file_permission(self, path: Path | str) -> Permission:
         """Get effective permission for a path."""
         ...

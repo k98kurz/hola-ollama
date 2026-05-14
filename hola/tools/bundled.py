@@ -3,8 +3,8 @@ Bundled tools for agent filesystem and memory interaction.
 """
 
 from pathlib import Path
+from hola.protocols import SessionProtocol
 from hola.tools.core import tool
-from hola.tools.protocols import SessionProtocol
 from hola.ollama.exceptions import ToolExecutionError
 import shutil
 import stat

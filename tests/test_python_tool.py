@@ -2,22 +2,29 @@
 Tests for python_executor module.
 """
 
-import unittest
 from pathlib import Path
-import tempfile
-import os
-
-from hola.tools.python_executor import (
+from hola.permissions import Permission
+from hola.session.session import Session
+from hola.tools.python import (
     _verify_blacklist,
     VerificationException,
     PermissionDeniedError,
     DEFAULT_ALLOWED_MODULES,
     python,
 )
+import shutil
+import tempfile
+import unittest
 
 
-class TestVerifyBlacklist(unittest.TestCase):
-    """Tests for AST blacklist validation."""
+class TestPythonTool(unittest.TestCase):
+    """Comprehensive tests for the python execution tool."""
+    def setUp(self):
+        self.temp_dir = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        if self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir)
 
     def test_safe_code_passes(self):
         _verify_blacklist("x = 1 + 2")
@@ -95,10 +102,6 @@ class TestVerifyBlacklist(unittest.TestCase):
             _verify_blacklist("quit()")
         self.assertIn("Blacklisted function call", str(cm.exception))
 
-
-class TestModuleAllowlist(unittest.TestCase):
-    """Tests for module allowlist enforcement."""
-
     def test_default_allowed_modules_defined(self):
         self.assertIsInstance(DEFAULT_ALLOWED_MODULES, list)
         self.assertGreater(len(DEFAULT_ALLOWED_MODULES), 0)
@@ -134,10 +137,6 @@ class TestModuleAllowlist(unittest.TestCase):
             python("import os.path", timeout=5)
         self.assertIn("not in allowlist", str(cm.exception))
 
-
-class TestTimeoutHandling(unittest.TestCase):
-    """Tests for timeout enforcement."""
-
     def test_fast_code_completes(self):
         result = python("x = 1 + 1\nprint(x)", timeout=5)
         self.assertIn("2", result[0])
@@ -155,13 +154,9 @@ class TestTimeoutHandling(unittest.TestCase):
     def test_nested_loops_times_out(self):
         with self.assertRaises(TimeoutError):
             python(
-                "for i in range(10000000):\n    for j in range(100):\n        pass",
+                "from time import sleep\nfor i in range(1000):\n    sleep(1)",
                 timeout=1
             )
-
-
-class TestSuccessfulExecution(unittest.TestCase):
-    """Tests for successful code execution scenarios."""
 
     def test_arithmetic_operations(self):
         result = python("print(2 + 2)", timeout=5)
@@ -218,10 +213,6 @@ class TestSuccessfulExecution(unittest.TestCase):
         result = python("", timeout=5)
         self.assertEqual(result[0].strip(), "")
 
-
-class TestExecutionErrors(unittest.TestCase):
-    """Tests for various error conditions."""
-
     def test_runtime_error(self):
         with self.assertRaises(VerificationException) as cm:
             python("1/0", timeout=5)
@@ -245,23 +236,10 @@ class TestExecutionErrors(unittest.TestCase):
             python("import nonexistent_module", timeout=5)
         self.assertIn("Execution error", str(cm.exception))
 
-
-class TestPermissionAwareFileOps(unittest.TestCase):
-    """Tests for permission-aware file operations."""
-
-    def setUp(self):
-        self.temp_dir = Path(tempfile.mkdtemp())
-
-    def tearDown(self):
-        import shutil
-        if self.temp_dir.exists():
-            shutil.rmtree(self.temp_dir)
-
     def test_file_read_without_permission_denied(self):
         test_file = self.temp_dir / "test.txt"
         test_file.write_text("hello")
 
-        from hola.session.session import Session
         session = Session("test_session_python", portable=True)
         session.dbsession.cwd = "/some/other/path"
 
@@ -272,7 +250,6 @@ class TestPermissionAwareFileOps(unittest.TestCase):
     def test_file_write_without_permission_denied(self):
         test_file = self.temp_dir / "test.txt"
 
-        from hola.session.session import Session
         session = Session("test_session_python", portable=True)
         session.dbsession.cwd = str(self.temp_dir)
 
@@ -284,8 +261,6 @@ class TestPermissionAwareFileOps(unittest.TestCase):
         test_file = self.temp_dir / "test.txt"
         test_file.write_text("hello")
 
-        from hola.session.session import Session
-        from hola.permissions import Permission
         session = Session("test_session_python", portable=True)
         session.dbsession.cwd = str(self.temp_dir)
         session.set_permission(str(test_file), Permission(4))
@@ -296,8 +271,6 @@ class TestPermissionAwareFileOps(unittest.TestCase):
     def test_file_write_with_permission_succeeds(self):
         test_file = self.temp_dir / "test.txt"
 
-        from hola.session.session import Session
-        from hola.permissions import Permission
         session = Session("test_session_python", portable=True)
         session.dbsession.cwd = str(self.temp_dir)
         session.set_permission(str(test_file.parent), Permission(7))
