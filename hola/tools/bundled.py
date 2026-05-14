@@ -3,32 +3,29 @@ Bundled tools for agent filesystem and memory interaction.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from hola.tools.core import tool
+from hola.tools.protocols import SessionProtocol
+from hola.ollama.exceptions import ToolExecutionError
 import shutil
 import stat
 import time
-from hola.tools.core import tool
-from hola.ollama.exceptions import ToolExecutionError
-
-if TYPE_CHECKING:
-    from hola.session.session import Session
 
 
 @tool(name="memorize", description="Store a value in session memory")
-def memorize(key: str, value: object, session: "Session") -> None:
+def memorize(key: str, value: object, session: SessionProtocol) -> None:
     session.memorize(key, value)
 
 
 @tool(name="recall", description="Retrieve a value from session memory")
-def recall(key: str, session: "Session") -> object:
+def recall(key: str, session: SessionProtocol) -> object:
     return session.recall(key)
 
 
 @tool(name="read", description="Read file contents as text")
-def read(path: str, session: "Session") -> str:
+def read(path: str, session: SessionProtocol) -> str:
     path_obj = Path(path)
     if not path_obj.is_absolute():
-        path_obj = Path(session.dbsession.cwd) / path_obj
+        path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj).read:
         raise ToolExecutionError(f"Read permission denied: {path_obj}")
@@ -42,10 +39,10 @@ def read(path: str, session: "Session") -> str:
 
 
 @tool(name="write", description="Write content to file")
-def write(path: str, content: str, session: "Session") -> None:
+def write(path: str, content: str, session: SessionProtocol) -> None:
     path_obj = Path(path)
     if not path_obj.is_absolute():
-        path_obj = Path(session.dbsession.cwd) / path_obj
+        path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj.parent).read:
         raise ToolExecutionError(
@@ -66,10 +63,10 @@ def write(path: str, content: str, session: "Session") -> None:
 
 
 @tool(name="rm", description="Remove file or directory")
-def rm(path: str, session: "Session", r: bool = False) -> None:
+def rm(path: str, session: SessionProtocol, r: bool = False) -> None:
     path_obj = Path(path)
     if not path_obj.is_absolute():
-        path_obj = Path(session.dbsession.cwd) / path_obj
+        path_obj = Path(session.cwd) / path_obj
 
     if not path_obj.exists():
         raise ToolExecutionError(f"Path not found: {path_obj}")
@@ -92,14 +89,14 @@ def rm(path: str, session: "Session", r: bool = False) -> None:
 
 
 @tool(name="mv", description="Move/rename file or directory")
-def mv(src: str, dst: str, session: "Session") -> None:
+def mv(src: str, dst: str, session: SessionProtocol) -> None:
     src_obj = Path(src)
     dst_obj = Path(dst)
 
     if not src_obj.is_absolute():
-        src_obj = Path(session.dbsession.cwd) / src_obj
+        src_obj = Path(session.cwd) / src_obj
     if not dst_obj.is_absolute():
-        dst_obj = Path(session.dbsession.cwd) / dst_obj
+        dst_obj = Path(session.cwd) / dst_obj
 
     if not session.get_file_permission(src_obj).write:
         raise ToolExecutionError(f"Write permission denied: {src_obj}")
@@ -121,14 +118,14 @@ def mv(src: str, dst: str, session: "Session") -> None:
 
 
 @tool(name="cp", description="Copy file or directory")
-def cp(src: str, dst: str, session: "Session", r: bool = False) -> None:
+def cp(src: str, dst: str, session: SessionProtocol, r: bool = False) -> None:
     src_obj = Path(src)
     dst_obj = Path(dst)
 
     if not src_obj.is_absolute():
-        src_obj = Path(session.dbsession.cwd) / src_obj
+        src_obj = Path(session.cwd) / src_obj
     if not dst_obj.is_absolute():
-        dst_obj = Path(session.dbsession.cwd) / dst_obj
+        dst_obj = Path(session.cwd) / dst_obj
 
     if not session.get_file_permission(src_obj).read:
         raise ToolExecutionError(f"Read permission denied: {src_obj}")
@@ -162,7 +159,7 @@ def grep(
         pattern: str,
         path: str = ".",
         data: str | list | dict | None = None,
-        session: "Session" = None,
+        session: SessionProtocol = None,
         r: bool = False,
         n: bool = False,
         rn: bool = False,
@@ -210,7 +207,7 @@ def grep(
     else:
         path_obj = Path(path)
         if not path_obj.is_absolute():
-            path_obj = Path(session.dbsession.cwd) / path_obj
+            path_obj = Path(session.cwd) / path_obj
 
         if not session.get_file_permission(path_obj).read:
             raise ToolExecutionError(f"Read permission denied: {path_obj}")
@@ -324,7 +321,7 @@ def grep(
 @tool(name="ls", description="List files in directory")
 def ls(
         path: str = ".",
-        session: "Session" = None,
+        session: SessionProtocol = None,
         l: bool = False,
         a: bool = False,
         R: bool = False,
@@ -334,7 +331,7 @@ def ls(
     ) -> list[str]:
     path_obj = Path(path)
     if not path_obj.is_absolute():
-        path_obj = Path(session.dbsession.cwd) / path_obj
+        path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj).read:
         raise ToolExecutionError(f"Read permission denied: {path_obj}")
@@ -397,13 +394,13 @@ def edit(
         path: str,
         old_string: str,
         new_string: str,
-        session: "Session",
+        session: SessionProtocol,
         count: int = 1,
         skip: int = 0,
     ) -> None:
     path_obj = Path(path)
     if not path_obj.is_absolute():
-        path_obj = Path(session.dbsession.cwd) / path_obj
+        path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj).read:
         raise ToolExecutionError(f"Read permission denied: {path_obj}")
@@ -440,10 +437,10 @@ def edit(
 
 
 @tool(name="append", description="Append content to file")
-def append(path: str, content: str, session: "Session") -> None:
+def append(path: str, content: str, session: SessionProtocol) -> None:
     path_obj = Path(path)
     if not path_obj.is_absolute():
-        path_obj = Path(session.dbsession.cwd) / path_obj
+        path_obj = Path(session.cwd) / path_obj
 
     if path_obj.exists():
         if not session.get_file_permission(path_obj).write:
@@ -468,7 +465,7 @@ def append(path: str, content: str, session: "Session") -> None:
 @tool(name="find", description="Find files matching criteria")
 def find(
         path: str = ".",
-        session: "Session" = None,
+        session: SessionProtocol = None,
         name: str | None = None,
         type: str | None = None,
         mindepth: int = 0,
@@ -476,7 +473,7 @@ def find(
     ) -> list[str]:
     path_obj = Path(path)
     if not path_obj.is_absolute():
-        path_obj = Path(session.dbsession.cwd) / path_obj
+        path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj).read:
         raise ToolExecutionError(f"Read permission denied: {path_obj}")

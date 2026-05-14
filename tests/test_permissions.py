@@ -5,7 +5,7 @@ Tests for Permission system (Permission class and Session permission methods).
 from pathlib import Path
 from hola.session import Session
 from hola.session.storage import initialize
-from hola.tools.types import Permission
+from hola.permissions import Permission
 import os
 import shutil
 import unittest

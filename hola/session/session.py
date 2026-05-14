@@ -24,7 +24,7 @@ from hola.session.fsm import (
     WorkflowState,
     WorkflowEvent,
 )
-from hola.tools.types import Permission
+from hola.permissions import Permission
 import packify
 import os
 import fnmatch
@@ -81,6 +81,11 @@ class Session:
     permissions_hook: Callable[[str, int, int], tuple[bool, list[str]]] | None = (
         field(default=None)
     )
+
+    @property
+    def cwd(self) -> str:
+        """Current working directory."""
+        return self.dbsession.cwd
 
     def __post_init__(self) -> None:
         initialize(self.portable)

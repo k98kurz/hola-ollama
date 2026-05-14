@@ -15,6 +15,7 @@ from hola.tools.types import (
     ToolCallFunction,
     ToolDefinition,
 )
+from hola.tools.protocols import SessionProtocol
 from hola.ollama.exceptions import ToolExecutionError
 from hola.tools.compat import (
     tools_to_xml,

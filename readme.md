@@ -9,15 +9,20 @@ with deterministic execution guarantees and reasonable security measures.
 - Tool system
   - [x] Tool calling for tool-enabled models
   - [x] XML-based workaround for models that do not natively support tools
-  - [ ] A few bundled tools: grep, find, ls, read, write, edit, append, rm, mv,
-    cp, memorize, recall, python (sandboxed)
-  - [x] Tool system allows chaining of tools, passing outputs as inputs, e.g.
+  - A few bundled tools:
+    - [x] FS IO: grep, find, ls, read, write, edit, append, rm, mv, cp
+    - [x] Context Management: memorize, recall
+    - [ ] Arbitrary Computation: calculate, python (sandboxed)
+    - [ ] Subagent tool that can call bundled agents
+    - No bash/cmd tool. The goal is to enforce ACL so agents can't run wild, so
+      there will be a handful of useful tools to obviate the need for bash/cmd.
+  - [x] Monadic tool call support (i.e. chaining of tools), passing outputs as
+    inputs, e.g.
     - `memorize("original-file", read("file.txt"))`
     - `write("backup.txt", recall("original-file"))`
-  - [ ] Tool system allows template interpolation of memorized values, e.g.
+  - [x] Tool system allows template interpolation of memorized values, e.g.
     - `python("python code ${original-file}")`
 - [ ] Bundled agents: general and research
-- [ ] Subagent tool that can call bundled agents
 - [ ] Benchmarking tools for testing models
 - [ ] Ability to include multiple models within an agentic workflow
 - [ ] Context gates definable at each workflow step
@@ -48,7 +53,7 @@ or
 python -m unittest
 ```
 
-There are currently 134 tests.
+There are currently 179 tests.
 
 ## Contributing
 

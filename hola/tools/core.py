@@ -4,20 +4,18 @@ Tool system for function registration and execution.
 
 from __future__ import annotations
 from types import UnionType
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable
 from hola.ollama.exceptions import ToolExecutionError
 from hola.tools.types import (
     ToolCall,
     ToolCallFunction,
     ToolDefinition,
 )
+from hola.tools.protocols import SessionProtocol
 import asyncio
 import inspect
 import logging
 import re
-
-if TYPE_CHECKING:
-    from hola.session.session import Session
 
 
 logger = logging.getLogger(__name__)
@@ -25,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _interpolate_template(
         template: str,
-        session: "Session",
+        session: SessionProtocol,
     ) -> str:
     """Interpolate template variables using session memories. Supports
         ${key}, ${key.path}, and ${key[0]} syntax with backslash
@@ -143,7 +141,7 @@ def _interpolate_template(
 
 def _interpolate_arguments(
         args: dict[str, Any],
-        session: "Session" | None,
+        session: SessionProtocol | None,
     ) -> dict[str, Any]:
     """Recursively interpolate template variables in arguments."""
     if session is None:
@@ -370,7 +368,7 @@ def _check_list_parameter_compatibility(
 async def _execute_nested_tool_call(
         tool_call: ToolCall,
         registry: ToolRegistry,
-        session: "Session" | None = None,
+        session: SessionProtocol | None = None,
     ) -> Any:
     """Execute a nested tool call with its children first."""
     if tool_call.nested_calls:
@@ -517,7 +515,7 @@ class ToolRegistry:
     async def execute_tool_call(
             self,
             tool_call: ToolCall,
-            session: "Session" | None = None,
+            session: SessionProtocol | None = None,
         ) -> Any:
         if tool_call.nested_calls:
             return await _execute_nested_tool_call(tool_call, self, session)
@@ -625,7 +623,7 @@ def list_tools() -> list[ToolDefinition]:
 
 async def execute_tool_call(
         tool_call: ToolCall,
-        session: "Session" | None = None,
+        session: SessionProtocol | None = None,
     ) -> Any:
     """Execute tool call using global registry."""
     if tool_call.nested_calls:

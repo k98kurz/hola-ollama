@@ -1,5 +1,5 @@
 from sqloquent import SqlModel, RelatedCollection
-from hola.tools.types import Permission
+from hola.permissions import Permission
 import packify
 
 

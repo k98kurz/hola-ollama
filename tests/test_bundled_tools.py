@@ -8,7 +8,8 @@ import shutil
 from pathlib import Path
 from hola.session.session import Session
 from hola.tools.core import execute_tool_call, list_tools
-from hola.tools.types import ToolCall, ToolCallFunction, Permission
+from hola.tools.types import ToolCall, ToolCallFunction
+from hola.permissions import Permission
 
 
 class TestMemorizeAndRecall(unittest.TestCase):
