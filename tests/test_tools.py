@@ -1169,5 +1169,88 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
         assert result == 20, result
 
 
+class TestSessionParameterInjection(unittest.IsolatedAsyncioTestCase):
+    """Test cases for session parameter injection in tool execution."""
+    def setUp(self):
+        """Set up test fixtures."""
+        from hola.session.session import Session
+
+        @tool(name="no_session", description="Tool without session")
+        def no_session_tool(x: int) -> int:
+            return x * 2
+
+        @tool(name="with_session", description="Tool with session")
+        def with_session_tool(x: int, session: "Session") -> int:
+            session.memorize("test_key", x * 2)
+            return x * 2
+
+        @tool(name="session_required", description="Tool requiring session")
+        def session_required_tool(session: "Session") -> str:
+            session.memorize("required_key", "value")
+            return "done"
+
+    async def test_session_injection_works(self):
+        """Test session is injected and accessible in tools."""
+        from hola.session.session import Session
+
+        session = Session("test_injection", portable=False)
+        session.delete()
+
+        session = Session("test_injection", portable=False)
+
+        call1 = ToolCall(
+            function=ToolCallFunction(
+                name="with_session",
+                arguments={"x": 5},
+            ),
+        )
+
+        call2 = ToolCall(
+            function=ToolCallFunction(
+                name="session_required",
+                arguments={},
+            ),
+        )
+
+        result1 = await execute_tool_call(call1, session)
+        result2 = await execute_tool_call(call2, session)
+
+        assert result1 == 10, result1
+        assert result2 == "done", result2
+
+        assert session.recall("test_key") == 10
+        assert session.recall("required_key") == "value"
+
+        session.delete()
+
+    async def test_tools_without_session_still_work(self):
+        """Test backward compatibility for tools without session parameter."""
+        tool_call = ToolCall(
+            function=ToolCallFunction(
+                name="no_session",
+                arguments={"x": 3},
+            ),
+        )
+
+        result = await execute_tool_call(tool_call, None)
+        assert result == 6, result
+
+    async def test_session_excluded_from_schemas(self):
+        """Test session parameter is hidden from JSON schemas."""
+        tools_with_session = [
+            get_tool("with_session"),
+            get_tool("session_required"),
+        ]
+
+        for tool in tools_with_session:
+            assert tool is not None
+
+            params = tool.parameters.get("properties", {})
+            assert "session" not in params, params
+
+            required = tool.parameters.get("required", [])
+            assert "session" not in required, required
+
+
 if __name__ == "__main__":
     unittest.main()

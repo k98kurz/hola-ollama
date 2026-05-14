@@ -20,3 +20,4 @@ from hola.tools.compat import (
     tools_to_xml,
     parse_tool_calls_from_xml,
 )
+from hola.tools.bundled import *  # Registers all bundled tools

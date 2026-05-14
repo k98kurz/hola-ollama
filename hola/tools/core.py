@@ -168,7 +168,7 @@ def _generate_schema(func: Callable[..., Any]) -> dict[str, Any]:
     parameters = {}
 
     for param_name, param in sig.parameters.items():
-        if param_name == "self":
+        if param_name == "self" or param_name == "session":
             continue
 
         param_type = param.annotation
@@ -185,7 +185,8 @@ def _generate_schema(func: Callable[..., Any]) -> dict[str, Any]:
     required = [
         name
         for name, param in sig.parameters.items()
-        if name != "self" and param.default is inspect.Parameter.empty
+        if name != "self" and name != "session"
+        and param.default is inspect.Parameter.empty
     ]
 
     return {
@@ -554,6 +555,11 @@ class ToolRegistry:
             name,
             args,
         )
+
+        sig = inspect.signature(func)
+        if "session" in sig.parameters and session is not None:
+            args = args.copy()
+            args["session"] = session
 
         try:
             if asyncio.iscoroutinefunction(func):
