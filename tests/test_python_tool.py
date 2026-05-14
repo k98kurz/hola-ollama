@@ -1,17 +1,12 @@
 """
-Tests for python_executor module.
+Tests for python tool.
 """
 
 from pathlib import Path
+from hola.errors import VerificationException, PermissionDeniedError
 from hola.permissions import Permission
 from hola.session.session import Session
-from hola.tools.python import (
-    _verify_blacklist,
-    VerificationException,
-    PermissionDeniedError,
-    DEFAULT_ALLOWED_MODULES,
-    python,
-)
+from hola.tools.python import _verify_blacklist, DEFAULT_ALLOWED_MODULES, python
 import shutil
 import tempfile
 import unittest
@@ -33,123 +28,77 @@ class TestPythonTool(unittest.TestCase):
         _verify_blacklist("def foo():\n    return 42")
 
     def test_syntax_error(self):
-        with self.assertRaises(VerificationException) as cm:
+        with self.assertRaises(VerificationException) as e:
             _verify_blacklist("x = 1 +")
-        self.assertIn("Syntax error", str(cm.exception))
+        assert "Syntax error" in str(e.exception), e.exception
 
-    def test_del_keyword_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("del x")
-        self.assertIn("Blacklisted AST node", str(cm.exception))
+    def test_ast_nodes_blocked(self):
+        test_cases = [
+            "del x",
+            "del x, y",
+            "def foo():\n    nonlocal x",
+            "def foo():\n    global x",
+        ]
+        for code in test_cases:
+            with self.assertRaises(VerificationException) as e:
+                _verify_blacklist(code)
+            assert "Blacklisted AST node" in str(e.exception), e.exception
 
-    def test_del_statement_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("del x, y")
-        self.assertIn("Blacklisted AST node", str(cm.exception))
-
-    def test_nonlocal_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("def foo():\n    nonlocal x")
-        self.assertIn("Blacklisted AST node", str(cm.exception))
-
-    def test_global_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("def foo():\n    global x")
-        self.assertIn("Blacklisted AST node", str(cm.exception))
-
-    def test_exec_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("exec('x = 1')")
-        self.assertIn("Blacklisted function call", str(cm.exception))
-
-    def test_eval_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("eval('1 + 1')")
-        self.assertIn("Blacklisted function call", str(cm.exception))
-
-    def test_compile_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("compile('x = 1', '<string>', 'exec')")
-        self.assertIn("Blacklisted function call", str(cm.exception))
-
-    def test_open_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("open('file.txt')")
-        self.assertIn("Blacklisted function call", str(cm.exception))
-
-    def test_getattr_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("getattr(obj, 'attr')")
-        self.assertIn("Blacklisted function call", str(cm.exception))
-
-    def test_setattr_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("setattr(obj, 'attr', 1)")
-        self.assertIn("Blacklisted function call", str(cm.exception))
-
-    def test_delattr_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("delattr(obj, 'attr')")
-        self.assertIn("Blacklisted function call", str(cm.exception))
-
-    def test_exit_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("exit()")
-        self.assertIn("Blacklisted function call", str(cm.exception))
-
-    def test_quit_blocked(self):
-        with self.assertRaises(VerificationException) as cm:
-            _verify_blacklist("quit()")
-        self.assertIn("Blacklisted function call", str(cm.exception))
+    def test_dangerous_functions_blocked(self):
+        test_cases = [
+            ("exec('x = 1')", "exec"),
+            ("eval('1 + 1')", "eval"),
+            ("compile('x = 1', '<string>', 'exec')", "compile"),
+            ("open('file.txt')", "open"),
+            ("getattr(obj, 'attr')", "getattr"),
+            ("setattr(obj, 'attr', 1)", "setattr"),
+            ("delattr(obj, 'attr')", "delattr"),
+            ("exit()", "exit"),
+            ("quit()", "quit"),
+        ]
+        for code, func_name in test_cases:
+            with self.assertRaises(VerificationException) as e:
+                _verify_blacklist(code)
+            assert "Blacklisted function call" in str(e.exception), (
+                str(e.exception)
+            )
+            assert func_name in str(e.exception), str(e.exception)
 
     def test_default_allowed_modules_defined(self):
-        self.assertIsInstance(DEFAULT_ALLOWED_MODULES, list)
-        self.assertGreater(len(DEFAULT_ALLOWED_MODULES), 0)
-        self.assertIn('math', DEFAULT_ALLOWED_MODULES)
-        self.assertIn('json', DEFAULT_ALLOWED_MODULES)
+        assert isinstance(DEFAULT_ALLOWED_MODULES, list), DEFAULT_ALLOWED_MODULES
+        assert len(DEFAULT_ALLOWED_MODULES) > 0, DEFAULT_ALLOWED_MODULES
+        assert 'math' in DEFAULT_ALLOWED_MODULES, DEFAULT_ALLOWED_MODULES
+        assert 'json' in DEFAULT_ALLOWED_MODULES, DEFAULT_ALLOWED_MODULES
 
-    def test_safe_module_import(self):
-        result = python("import math\nprint(math.sqrt(16))", timeout=5)
-        self.assertIn("4.0", result[0])
+    def test_allowed_modules(self):
+        test_cases = [
+            ("import math\nprint(math.sqrt(16))", "4.0"),
+            ("import json\nprint(json.dumps({'key': 'value'}))", '"key"'),
+            ("import re\nprint(re.sub(r'hello', 'world', 'hello there'))",
+             "world there"),
+        ]
+        for code, expected in test_cases:
+            result = python(code, timeout=5)
+            assert expected in result[0], (expected, result)
 
-    def test_allowed_json_module(self):
-        result = python(
-            "import json\nprint(json.dumps({'key': 'value'}))",
-            timeout=5
-        )
-        self.assertIn('"key"', result[0])
-        self.assertIn('"value"', result[0])
-
-    def test_allowed_re_module(self):
-        result = python(
-            "import re\nprint(re.sub(r'hello', 'world', 'hello there'))",
-            timeout=5
-        )
-        self.assertIn("world there", result[0])
-
-    def test_forbidden_module_import(self):
-        with self.assertRaises(VerificationException) as cm:
-            python("import os", timeout=5)
-        self.assertIn("not in allowlist", str(cm.exception))
-
-    def test_forbidden_submodule_import(self):
-        with self.assertRaises(VerificationException) as cm:
-            python("import os.path", timeout=5)
-        self.assertIn("not in allowlist", str(cm.exception))
+    def test_forbidden_modules(self):
+        test_cases = [
+            "import os",
+            "import os.path",
+        ]
+        for code in test_cases:
+            with self.assertRaises(VerificationException) as e:
+                python(code, timeout=5)
+            assert "not in allowlist" in str(e.exception), str(e.exception)
 
     def test_fast_code_completes(self):
         result = python("x = 1 + 1\nprint(x)", timeout=5)
-        self.assertIn("2", result[0])
+        assert "2" in result[0], result
 
-    def test_code_in_loop_times_out(self):
-        with self.assertRaises(TimeoutError) as cm:
+    def test_infinite_loop_times_out(self):
+        with self.assertRaises(TimeoutError) as e:
             python("while True:\n    pass", timeout=2)
-        self.assertIn("timeout", str(cm.exception).lower())
-
-    def test_long_operation_times_out(self):
-        with self.assertRaises(TimeoutError) as cm:
-            python("while True:\n    pass", timeout=2)
-        self.assertIn("timeout", str(cm.exception).lower())
+        assert "timeout" in str(e.exception).lower(), str(e.exception).lower()
 
     def test_nested_loops_times_out(self):
         with self.assertRaises(TimeoutError):
@@ -158,126 +107,97 @@ class TestPythonTool(unittest.TestCase):
                 timeout=1
             )
 
-    def test_arithmetic_operations(self):
-        result = python("print(2 + 2)", timeout=5)
-        self.assertIn("4", result[0])
+    def test_basic_operations(self):
+        test_cases = [
+            ("print(2 + 2)", "4"),
+            ("print('hello' + ' world')", "hello world"),
+            ("print([1, 2, 3] * 2)", "[1, 2, 3, 1, 2, 3]"),
+            ("print({'a': 1, 'b': 2}.get('a'))", "1"),
+        ]
+        for code, expected in test_cases:
+            result = python(code, timeout=5)
+            assert expected in result[0], (expected, result)
 
-    def test_string_operations(self):
-        result = python("print('hello' + ' world')", timeout=5)
-        self.assertIn("hello world", result[0])
+    def test_functions_and_classes(self):
+        test_cases = [
+            ("def add(x, y):\n    return x + y\nprint(add(3, 4))", "7"),
+            ("class Counter:\n    def __init__(self):\n        self.x = 0\n"
+             "c = Counter()\nprint(c.x)", "0"),
+            ("f = lambda x: x * 2\nprint(f(5))", "10"),
+        ]
+        for code, expected in test_cases:
+            result = python(code, timeout=5)
+            assert expected in result[0], (expected, result)
 
-    def test_list_operations(self):
-        result = python("print([1, 2, 3] * 2)", timeout=5)
-        self.assertIn("[1, 2, 3, 1, 2, 3]", result[0])
-
-    def test_dict_operations(self):
-        result = python("print({'a': 1, 'b': 2}.get('a'))", timeout=5)
-        self.assertIn("1", result[0])
-
-    def test_function_definition(self):
-        result = python(
-            "def add(x, y):\n    return x + y\nprint(add(3, 4))",
-            timeout=5
-        )
-        self.assertIn("7", result[0])
-
-    def test_class_definition(self):
-        result = python(
-            "class Counter:\n    def __init__(self):\n        self.x = 0\n"
-            "c = Counter()\nprint(c.x)",
-            timeout=5
-        )
-        self.assertIn("0", result[0])
-
-    def test_lambda_functions(self):
-        result = python("f = lambda x: x * 2\nprint(f(5))", timeout=5)
-        self.assertIn("10", result[0])
-
-    def test_list_comprehensions(self):
+    def test_advanced_features(self):
         result = python("print([x*2 for x in range(5)])", timeout=5)
-        self.assertIn("[0, 2, 4, 6, 8]", result[0])
+        assert "[0, 2, 4, 6, 8]" in result[0], result
 
-    def test_exception_handling(self):
         result = python(
             "try:\n    1/0\nexcept ZeroDivisionError:\n    print('caught')",
             timeout=5
         )
-        self.assertIn("caught", result[0])
+        assert "caught" in result[0], result
 
-    def test_print_multiple_lines(self):
         result = python("print('line1')\nprint('line2')", timeout=5)
-        self.assertIn("line1", result[0])
-        self.assertIn("line2", result[0])
+        assert "line1" in result[0], result
+        assert "line2" in result[0], result
 
-    def test_empty_code(self):
         result = python("", timeout=5)
-        self.assertEqual(result[0].strip(), "")
+        assert result[0].strip() == "", result
 
-    def test_runtime_error(self):
-        with self.assertRaises(VerificationException) as cm:
-            python("1/0", timeout=5)
-        self.assertIn("Execution error", str(cm.exception))
-        self.assertIn("division by zero", str(cm.exception))
+    def test_runtime_errors(self):
+        test_cases = [
+            ("1/0", "division by zero"),
+            ("print(undefined_variable)", "undefined_variable"),
+            ("print(1 + 'a')", "unsupported operand type"),
+        ]
+        for code, expected in test_cases:
+            with self.assertRaises(VerificationException) as e:
+                python(code, timeout=5)
+            assert "Execution error" in str(e.exception), str(cm.expected)
+            assert expected in str(e.exception), str(cm.expected)
 
-    def test_name_error(self):
-        with self.assertRaises(VerificationException) as cm:
-            python("print(undefined_variable)", timeout=5)
-        self.assertIn("Execution error", str(cm.exception))
-        self.assertIn("undefined_variable", str(cm.exception))
-
-    def test_type_error(self):
-        with self.assertRaises(VerificationException) as cm:
-            python("print(1 + 'a')", timeout=5)
-        self.assertIn("Execution error", str(cm.exception))
-        self.assertIn("unsupported operand type", str(cm.exception))
-
-    def test_import_error_for_allowed_module(self):
-        with self.assertRaises(VerificationException) as cm:
+    def test_import_errors(self):
+        with self.assertRaises(VerificationException) as e:
             python("import nonexistent_module", timeout=5)
-        self.assertIn("Execution error", str(cm.exception))
+        assert "Execution error" in str(e.exception), str(cm.expected)
 
-    def test_file_read_without_permission_denied(self):
-        test_file = self.temp_dir / "test.txt"
-        test_file.write_text("hello")
-
+    def test_file_operations_without_permission_denied(self):
         session = Session("test_session_python", portable=True)
         session.dbsession.cwd = "/some/other/path"
 
-        with self.assertRaises(VerificationException) as cm:
-            python(f"open('{test_file}', 'r')", timeout=5, session=session)
-        self.assertIn("Execution error", str(cm.exception))
-
-    def test_file_write_without_permission_denied(self):
-        test_file = self.temp_dir / "test.txt"
-
-        session = Session("test_session_python", portable=True)
-        session.dbsession.cwd = str(self.temp_dir)
-
-        with self.assertRaises(VerificationException) as cm:
-            python(f"open('{test_file}', 'w')", timeout=5, session=session)
-        self.assertIn("Execution error", str(cm.exception))
-
-    def test_file_read_with_permission_succeeds(self):
         test_file = self.temp_dir / "test.txt"
         test_file.write_text("hello")
 
+        with self.assertRaises(VerificationException) as e:
+            python(f"open('{test_file}', 'r')", timeout=5, session=session)
+        assert "Execution error" in str(e.exception), str(e.exception)
+
+        test_file.unlink()
+        with self.assertRaises(VerificationException) as e:
+            python(f"open('{test_file}', 'w')", timeout=5, session=session)
+        assert "Execution error" in str(e.exception), str(e.exception)
+
+    def test_file_operations_with_permission_succeed(self):
         session = Session("test_session_python", portable=True)
         session.dbsession.cwd = str(self.temp_dir)
+
+        test_file = self.temp_dir / "test.txt"
+        test_file.write_text("hello")
         session.set_permission(str(test_file), Permission(4))
 
-        result = python(f"print(open('{test_file}', 'r').read())", timeout=5, session=session)
-        self.assertIn("hello", result[0])
+        result = python(
+            f"print(open('{test_file}', 'r').read())", timeout=5,
+            session=session
+        )
+        assert "hello" in result[0], result
 
-    def test_file_write_with_permission_succeeds(self):
-        test_file = self.temp_dir / "test.txt"
-
-        session = Session("test_session_python", portable=True)
-        session.dbsession.cwd = str(self.temp_dir)
         session.set_permission(str(test_file.parent), Permission(7))
         session.set_permission(str(test_file), Permission(7))
-
-        python(f"open('{test_file}', 'w').write('world')", timeout=5, session=session)
-        self.assertEqual(test_file.read_text(), "world")
+        python(f"open('{test_file}', 'w').write('world')", timeout=5,
+                session=session)
+        assert "world" == test_file.read_text(), test_file.read_text()
 
 
 if __name__ == "__main__":
