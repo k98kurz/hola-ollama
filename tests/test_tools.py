@@ -233,15 +233,15 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         result = await execute_tool_call(tool_call)
         assert result == 10, result
 
-    async def test_tool_validation_string_type(self):
-        """Test tool validation for string type."""
-        @tool(name="test_tool", description="Test tool")
-        def test_func(name: str) -> str:
+    async def test_parameter_type_validation(self):
+        """Test parameter type validation for string, int, number, bool."""
+        @tool(name="test_tool_string", description="Test tool")
+        def test_func_string(name: str) -> str:
             return name
 
         tool_call = ToolCall(
             function=ToolCallFunction(
-                name="test_tool",
+                name="test_tool_string",
                 arguments={"name": 123},
             ),
         )
@@ -249,15 +249,13 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
 
-    async def test_tool_validation_integer_type(self):
-        """Test tool validation for integer type."""
-        @tool(name="test_tool", description="Test tool")
-        def test_func(count: int) -> int:
+        @tool(name="test_tool_int", description="Test tool")
+        def test_func_int(count: int) -> int:
             return count
 
         tool_call = ToolCall(
             function=ToolCallFunction(
-                name="test_tool",
+                name="test_tool_int",
                 arguments={"count": "not_an_int"},
             ),
         )
@@ -265,15 +263,13 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
 
-    async def test_tool_validation_number_type(self):
-        """Test tool validation for number type."""
-        @tool(name="test_tool", description="Test tool")
-        def test_func(price: float) -> float:
+        @tool(name="test_tool_float", description="Test tool")
+        def test_func_float(price: float) -> float:
             return price
 
         tool_call = ToolCall(
             function=ToolCallFunction(
-                name="test_tool",
+                name="test_tool_float",
                 arguments={"price": [1, 2, 3]},
             ),
         )
@@ -281,15 +277,13 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
 
-    async def test_tool_validation_boolean_type(self):
-        """Test tool validation for boolean type."""
-        @tool(name="test_tool", description="Test tool")
-        def test_func(enabled: bool) -> bool:
+        @tool(name="test_tool_bool", description="Test tool")
+        def test_func_bool(enabled: bool) -> bool:
             return enabled
 
         tool_call = ToolCall(
             function=ToolCallFunction(
-                name="test_tool",
+                name="test_tool_bool",
                 arguments={"enabled": "true"},
             ),
         )
@@ -297,8 +291,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
 
-    async def test_tool_execution_not_found_error(self):
-        """Test tool execution when tool not found."""
+    async def test_error_scenarios(self):
+        """Test not found, execution error, error wrapper, inner error propagation, multiple children error."""
         tool_call = ToolCall(
             function=ToolCallFunction(
                 name="nonexistent_tool",
@@ -309,8 +303,6 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
 
-    async def test_tool_execution_error_wrapper(self):
-        """Test tool execution error wrapping."""
         @tool(name="failing_tool", description="Failing tool")
         def failing_func(x: int) -> int:
             raise ValueError("Intentional error")
@@ -324,6 +316,79 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
+
+        @tool(name="inner", description="Inner tool")
+        def inner_tool(x: int) -> int:
+            return x * 2
+
+        @tool(name="outer", description="Outer tool")
+        def outer_tool(data: int) -> int:
+            return data + 10
+
+        nested_call = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": 5},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[nested_call],
+        )
+
+        result = await execute_tool_call(outer_call)
+        assert result == 20, result
+
+        @tool(name="failing_inner", description="Failing inner tool")
+        def failing_inner(x: int) -> int:
+            raise ValueError("Intentional failure")
+
+        nested_call = ToolCall(
+            function=ToolCallFunction(
+                name="failing_inner",
+                arguments={"x": 5},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[nested_call],
+        )
+
+        with self.assertRaises(ToolExecutionError):
+            await execute_tool_call(outer_call)
+
+        call1 = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": 1},
+            ),
+        )
+
+        call2 = ToolCall(
+            function=ToolCallFunction(
+                name="inner",
+                arguments={"x": 2},
+            ),
+        )
+
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer",
+                arguments={},
+            ),
+            nested_calls=[call1, call2],
+        )
+
+        with self.assertRaises(ToolExecutionError):
+            await execute_tool_call(outer_call)
 
     async def test_nested_tool_call_single_level(self):
         """Test single level nested tool call."""
@@ -435,89 +500,26 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         result = await execute_tool_call(outer_call)
         assert result == 9, result
 
-    async def test_nested_tool_call_multiple_children_no_list_param_error(self):
-        """Test error when multiple children but no list parameter."""
-        @tool(name="inner", description="Inner tool")
-        def inner_tool(x: int) -> int:
+    async def test_type_conversion_in_nested_calls(self):
+        """Test automatic type conversions and dependency execution order."""
+        @tool(name="inner_int", description="Inner tool int")
+        def inner_int(x: int) -> int:
             return x
 
-        @tool(name="outer", description="Outer tool")
-        def outer_tool(data: int) -> int:
-            return data
-
-        call1 = ToolCall(
-            function=ToolCallFunction(
-                name="inner",
-                arguments={"x": 1},
-            ),
-        )
-
-        call2 = ToolCall(
-            function=ToolCallFunction(
-                name="inner",
-                arguments={"x": 2},
-            ),
-        )
-
-        outer_call = ToolCall(
-            function=ToolCallFunction(
-                name="outer",
-                arguments={},
-            ),
-            nested_calls=[call1, call2],
-        )
-
-        with self.assertRaises(ToolExecutionError):
-            await execute_tool_call(outer_call)
-
-    async def test_nested_tool_call_inner_error_propagation(self):
-        """Test that inner tool errors prevent outer execution."""
-        @tool(name="failing_inner", description="Failing inner tool")
-        def failing_inner(x: int) -> int:
-            raise ValueError("Intentional failure")
-
-        @tool(name="outer", description="Outer tool")
-        def outer_tool(data: int) -> int:
-            return data + 10
-
-        nested_call = ToolCall(
-            function=ToolCallFunction(
-                name="failing_inner",
-                arguments={"x": 5},
-            ),
-        )
-
-        outer_call = ToolCall(
-            function=ToolCallFunction(
-                name="outer",
-                arguments={},
-            ),
-            nested_calls=[nested_call],
-        )
-
-        with self.assertRaises(ToolExecutionError):
-            await execute_tool_call(outer_call)
-
-    async def test_type_conversion_int_to_float(self):
-        """Test automatic type conversion from int to float."""
-        @tool(name="inner", description="Inner tool")
-        def inner_tool(x: int) -> int:
-            return x
-
-        @tool(name="outer", description="Outer tool")
-        def outer_tool(data: float) -> float:
+        @tool(name="outer_float", description="Outer tool float")
+        def outer_float(data: float) -> float:
             return data * 1.5
 
         nested_call = ToolCall(
             function=ToolCallFunction(
-                name="inner",
+                name="inner_int",
                 arguments={"x": 4},
             ),
         )
 
         outer_call = ToolCall(
             function=ToolCallFunction(
-                name="outer",
+                name="outer_float",
                 arguments={},
             ),
             nested_calls=[nested_call],
@@ -526,26 +528,24 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         result = await execute_tool_call(outer_call)
         assert result == 6.0, result
 
-    async def test_type_conversion_str_to_int(self):
-        """Test automatic type conversion from str to int."""
-        @tool(name="inner", description="Inner tool")
-        def inner_tool(x: str) -> str:
+        @tool(name="inner_str", description="Inner tool str")
+        def inner_str(x: str) -> str:
             return x
 
-        @tool(name="outer", description="Outer tool")
-        def outer_tool(data: int) -> int:
+        @tool(name="outer_int", description="Outer tool int")
+        def outer_int(data: int) -> int:
             return data * 2
 
         nested_call = ToolCall(
             function=ToolCallFunction(
-                name="inner",
+                name="inner_str",
                 arguments={"x": "5"},
             ),
         )
 
         outer_call = ToolCall(
             function=ToolCallFunction(
-                name="outer",
+                name="outer_int",
                 arguments={},
             ),
             nested_calls=[nested_call],
@@ -554,26 +554,24 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         result = await execute_tool_call(outer_call)
         assert result == 10, result
 
-    async def test_type_conversion_bool_from_string(self):
-        """Test boolean conversion from string."""
-        @tool(name="inner", description="Inner tool")
-        def inner_tool(x: str) -> str:
+        @tool(name="inner_str2", description="Inner tool str2")
+        def inner_str2(x: str) -> str:
             return x
 
-        @tool(name="outer", description="Outer tool")
-        def outer_tool(data: bool) -> str:
+        @tool(name="outer_bool", description="Outer tool bool")
+        def outer_bool(data: bool) -> str:
             return "yes" if data else "no"
 
         nested_call = ToolCall(
             function=ToolCallFunction(
-                name="inner",
+                name="inner_str2",
                 arguments={"x": "true"},
             ),
         )
 
         outer_call = ToolCall(
             function=ToolCallFunction(
-                name="outer",
+                name="outer_bool",
                 arguments={},
             ),
             nested_calls=[nested_call],
@@ -582,8 +580,6 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         result = await execute_tool_call(outer_call)
         assert result == "yes", result
 
-    async def test_dependency_resolution_execution_order(self):
-        """Test that nested calls execute in correct order (depth-first)."""
         execution_order = []
 
         @tool(name="first", description="First tool")
@@ -699,9 +695,9 @@ class TestXMLCompatibility(unittest.TestCase):
         assert "<tool name=\"multiply\">" in xml, xml
         assert xml.count("<tool name=") == 2, xml
 
-    def test_format_boolean_parameters(self):
-        """Test formatting boolean parameters."""
-        tool_def = ToolDefinition(
+    def test_format_basic_parameter_types(self):
+        """Test formatting boolean, string, and number parameters."""
+        tool_def_bool = ToolDefinition(
             name="toggle",
             description="Toggle a feature",
             parameters={
@@ -710,12 +706,10 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["enabled"],
             },
         )
-        xml = tools_to_xml([tool_def])
+        xml = tools_to_xml([tool_def_bool])
         assert "<parameter name=\"enabled\">true</parameter>" in xml, xml
 
-    def test_format_string_parameters(self):
-        """Test formatting string parameters."""
-        tool_def = ToolDefinition(
+        tool_def_str = ToolDefinition(
             name="greet",
             description="Say hello",
             parameters={
@@ -724,12 +718,10 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["name"],
             },
         )
-        xml = tools_to_xml([tool_def])
+        xml = tools_to_xml([tool_def_str])
         assert "<parameter name=\"name\">\"example\"</parameter>" in xml, xml
 
-    def test_format_number_parameters(self):
-        """Test formatting number (float) parameters."""
-        tool_def = ToolDefinition(
+        tool_def_num = ToolDefinition(
             name="calculate",
             description="Calculate something",
             parameters={
@@ -738,16 +730,14 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["value"],
             },
         )
-        xml = tools_to_xml([tool_def])
+        xml = tools_to_xml([tool_def_num])
         assert "<parameter name=\"value\">3.14</parameter>" in xml, xml
 
-    def test_format_empty_tool_list(self):
-        """Test formatting an empty list of tools."""
+    def test_format_edge_cases(self):
+        """Test formatting empty tool list and tool without properties."""
         xml = tools_to_xml([])
         assert xml == "<tools>\n</tools>", xml
 
-    def test_format_tool_without_properties(self):
-        """Test formatting a tool with no parameters."""
         tool_def = ToolDefinition(
             name="ping",
             description="Simple ping",
@@ -837,8 +827,8 @@ class TestXMLCompatibility(unittest.TestCase):
         tool_calls = parse_tool_calls_from_xml(xml_text)
         assert len(tool_calls) == 0, len(tool_calls)
 
-    def test_convert_parameter_value_booleans(self):
-        """Test boolean string conversion for compat layer."""
+    def test_convert_parameter_value(self):
+        """Test parameter value conversion for booleans, numbers, and strings."""
         assert convert_parameter_value("true") is True
         assert convert_parameter_value("false") is False
         assert convert_parameter_value("yes") is True
@@ -848,15 +838,11 @@ class TestXMLCompatibility(unittest.TestCase):
         assert convert_parameter_value("TRUE") is True
         assert convert_parameter_value("FALSE") is False
 
-    def test_convert_parameter_value_numbers(self):
-        """Test numeric string conversion for compat layer."""
         assert convert_parameter_value("42") == 42
         assert convert_parameter_value("3.14") == 3.14
         assert convert_parameter_value("-5") == -5
         assert convert_parameter_value("0.5") == 0.5
 
-    def test_convert_parameter_value_strings(self):
-        """Test that non-convertible strings remain strings for compat layer."""
         assert convert_parameter_value("hello") == "hello"
         assert convert_parameter_value("not_a_number") == "not_a_number"
         assert convert_parameter_value("maybe") == "maybe"

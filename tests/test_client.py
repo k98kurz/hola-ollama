@@ -31,7 +31,6 @@ from hola.ollama.types import (
 
 class TestClient(unittest.IsolatedAsyncioTestCase):
     """Test cases for OllamaClient."""
-
     def setUp(self):
         """Set up test fixtures."""
         self.client = OllamaClient()
@@ -79,63 +78,134 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         )
         await custom_client.close()
 
-    async def test_chat_streaming(self):
-        """Test streaming chat response."""
-        request = ChatRequest(
-            model="granite4.1:3b",
-            messages=[Message(role=Role.USER, content="Say hello")],
-            options=GenerationOptions(num_predict=10),
-        )
+    async def test_streaming_operations(self):
+        """Test streaming operations for both chat and generate."""
+        for request_type, make_request in [
+            ("chat", lambda: ChatRequest(
+                model="granite4.1:3b",
+                messages=[Message(role=Role.USER, content="Say hello")],
+                options=GenerationOptions(num_predict=10),
+            )),
+            ("generate", lambda: GenerateRequest(
+                model="granite4.1:3b",
+                prompt="Say hello",
+                options=GenerationOptions(num_predict=10),
+            )),
+        ]:
+            request = make_request()
+            chunks = []
+            async for chunk in self.client.chat(request) if request_type == "chat" else self.client.generate(request):
+                chunks.append(chunk)
+                if chunk.done:
+                    break
 
-        chunks = []
-        async for chunk in self.client.chat(request):
-            chunks.append(chunk)
-            if chunk.done:
-                break
+            assert len(chunks) > 0, chunks
+            if request_type == "chat":
+                assert any(chunk.message.content for chunk in chunks), chunks
+            else:
+                assert any(chunk.response for chunk in chunks), chunks
+            assert chunks[-1].done, chunks[-1].done
 
-        assert len(chunks) > 0, chunks
-        assert any(chunk.message.content for chunk in chunks), chunks
-        assert chunks[-1].done, chunks[-1].done
+    async def test_sync_operations(self):
+        """Test sync operations for both chat and generate."""
+        for request_type, request_class, mock_json in [
+            ("chat", ChatRequest, {
+                "model": "granite4.1:3b",
+                "message": {"role": "assistant", "content": "Hello world"},
+                "done": True,
+                "total_duration": 1000000000,
+            }),
+            ("generate", GenerateRequest, {
+                "model": "granite4.1:3b",
+                "response": "Hello world",
+                "done": True,
+                "total_duration": 1000000000,
+            }),
+        ]:
+            if request_type == "chat":
+                request = ChatRequest(
+                    model="granite4.1:3b",
+                    messages=[Message(role=Role.USER, content="test")],
+                )
+            else:
+                request = GenerateRequest(
+                    model="granite4.1:3b",
+                    prompt="test",
+                )
 
-    async def test_chat_sync(self):
-        """Test non-streaming chat response."""
-        request = ChatRequest(
-            model="granite4.1:3b",
-            messages=[Message(role=Role.USER, content="test")],
-        )
+            mock_response = MagicMock()
+            mock_response.json.return_value = mock_json
 
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "model": "granite4.1:3b",
-            "message": {"role": "assistant", "content": "Hello world"},
-            "done": True,
-            "total_duration": 1000000000,
-        }
+            async def mock_post(*args, **kwargs):
+                return mock_response
 
-        async def mock_post(*args, **kwargs):
-            return mock_response
+            client = OllamaClient()
+            client._client.post = mock_post
 
-        client = OllamaClient()
-        client._client.post = mock_post
+            if request_type == "chat":
+                def run_sync():
+                    return client.chat_sync(request)
 
-        def run_chat_sync():
-            return client.chat_sync(request)
+                response = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    run_sync,
+                )
 
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            run_chat_sync,
-        )
+                assert response.model == "granite4.1:3b", (
+                    response.model,
+                    "granite4.1:3b",
+                )
+                assert response.message.content == "Hello world", (
+                    response.message.content,
+                    "Hello world",
+                )
+            else:
+                def run_sync():
+                    return client.generate_sync(request)
 
-        assert response.model == "granite4.1:3b", (
-            response.model,
-            "granite4.1:3b",
-        )
-        assert response.message.content == "Hello world", (
-            response.message.content,
-            "Hello world",
-        )
+                response = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    run_sync,
+                )
 
-        await client.close()
+                assert response.model == "granite4.1:3b", (
+                    response.model,
+                    "granite4.1:3b",
+                )
+                assert response.response == "Hello world", (
+                    response.response,
+                    "Hello world",
+                )
+
+            await client.close()
+
+    async def test_e2e_operations(self):
+        """Test end-to-end operations for both chat and generate."""
+        for request_type, make_request in [
+            ("chat", lambda: ChatRequest(
+                model="granite4.1:3b",
+                messages=[Message(role=Role.USER, content="Say hello")],
+                options=GenerationOptions(num_predict=10),
+            )),
+            ("generate", lambda: GenerateRequest(
+                model="granite4.1:3b",
+                prompt="Say hello",
+                options=GenerationOptions(num_predict=10),
+            )),
+        ]:
+            request = make_request()
+            chunks = []
+            async for chunk in self.client.chat(request) if request_type == "chat" else self.client.generate(request):
+                chunks.append(chunk)
+                if chunk.done:
+                    break
+
+            assert len(chunks) > 0, chunks
+            if request_type == "chat":
+                assert any(chunk.message.content for chunk in chunks), chunks
+            else:
+                assert any(chunk.response for chunk in chunks), chunks
+            assert chunks[-1].done, chunks[-1].done
 
     async def test_load_model(self):
         """Test model loading."""
@@ -232,43 +302,53 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
                 "granite4.1:3b",
             )
 
-    async def test_retry_logic_connection_error(self):
-        """Test retry logic with connection errors."""
-        request = ChatRequest(
-            model="granite4.1:3b",
-            messages=[Message(role=Role.USER, content="test")],
-        )
+    async def test_retry_logic(self):
+        """Test retry logic with connection and timeout errors for both chat and generate."""
+        for request_type, make_request in [
+            ("chat", lambda: ChatRequest(
+                model="granite4.1:3b",
+                messages=[Message(role=Role.USER, content="test")],
+            )),
+            ("generate", lambda: GenerateRequest(
+                model="granite4.1:3b",
+                prompt="test",
+            )),
+        ]:
+            request = make_request()
+            call_count = [0]
 
-        call_count = [0]
+            class MockStreamContext:
+                async def __aenter__(self):
+                    call_count[0] += 1
+                    raise httpx.ConnectError("Connection refused")
 
-        class MockStreamContext:
-            async def __aenter__(self):
-                call_count[0] += 1
-                raise httpx.ConnectError("Connection refused")
+                async def __aexit__(self, *args):
+                    pass
 
-            async def __aexit__(self, *args):
-                pass
+            self.client._client.stream = Mock(return_value=MockStreamContext())
 
-        self.client._client.stream = Mock(return_value=MockStreamContext())
+            with self.assertRaises(OllamaConnectionError):
+                if request_type == "chat":
+                    async for _ in self.client.chat(request):
+                        pass
+                else:
+                    async for _ in self.client.generate(request):
+                        pass
 
-        with self.assertRaises(OllamaConnectionError):
-            async for _ in self.client.chat(request):
-                pass
+            assert call_count[0] == 3, (call_count[0], 3)
 
-        assert call_count[0] == 3, (call_count[0], 3)
+            client = OllamaClient()
+            request = make_request()
+            chunks = []
+            if request_type == "chat":
+                async for chunk in client.chat(request):
+                    chunks.append(chunk)
+            else:
+                async for chunk in client.generate(request):
+                    chunks.append(chunk)
 
-    async def test_retry_logic_timeout_error(self):
-        """Test retry logic with timeout errors."""
-        request = ChatRequest(
-            model="granite4.1:3b",
-            messages=[Message(role=Role.USER, content="test")],
-        )
-
-        chunks = []
-        async for chunk in self.client.chat(request):
-            chunks.append(chunk)
-
-        assert len(chunks) > 0, len(chunks)
+            assert len(chunks) > 0, len(chunks)
+            await client.close()
 
     async def test_http_status_error(self):
         """Test HTTP status error handling."""
@@ -322,24 +402,6 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         async with OllamaClient() as client:
             assert client is not None, client
 
-    async def test_e2e_chat_workflow(self):
-        """Test end-to-end chat workflow (requires Ollama server)."""
-        request = ChatRequest(
-            model="granite4.1:3b",
-            messages=[Message(role=Role.USER, content="Say hello")],
-            options=GenerationOptions(num_predict=10),
-        )
-
-        chunks = []
-        async for chunk in self.client.chat(request):
-            chunks.append(chunk)
-            if chunk.done:
-                break
-
-        assert len(chunks) > 0, chunks
-        assert any(chunk.message.content for chunk in chunks), chunks
-        assert chunks[-1].done, chunks[-1].done
-
     async def test_e2e_model_management_workflow(self):
         """Test end-to-end model management (requires Ollama server)."""
         models = await self.client.list_models()
@@ -355,107 +417,6 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             ), running_models
 
             await self.client.unload_model(model_name)
-
-    async def test_generate_streaming(self):
-        """Test streaming generate response."""
-        request = GenerateRequest(
-            model="granite4.1:3b",
-            prompt="Say hello",
-            options=GenerationOptions(num_predict=10),
-        )
-
-        chunks = []
-        async for chunk in self.client.generate(request):
-            chunks.append(chunk)
-            if chunk.done:
-                break
-
-        assert len(chunks) > 0, chunks
-        assert any(chunk.response for chunk in chunks), chunks
-        assert chunks[-1].done, chunks[-1].done
-
-    async def test_generate_sync(self):
-        """Test non-streaming generate response."""
-        request = GenerateRequest(
-            model="granite4.1:3b",
-            prompt="test",
-        )
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "model": "granite4.1:3b",
-            "response": "Hello world",
-            "done": True,
-            "total_duration": 1000000000,
-        }
-
-        async def mock_post(*args, **kwargs):
-            return mock_response
-
-        client = OllamaClient()
-        client._client.post = mock_post
-
-        def run_generate_sync():
-            return client.generate_sync(request)
-
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            run_generate_sync,
-        )
-
-        assert response.model == "granite4.1:3b", (
-            response.model,
-            "granite4.1:3b",
-        )
-        assert response.response == "Hello world", (
-            response.response,
-            "Hello world",
-        )
-
-        await client.close()
-
-    async def test_generate_retry_logic_connection_error(self):
-        """Test generate retry logic with connection errors."""
-        request = GenerateRequest(
-            model="granite4.1:3b",
-            prompt="test",
-        )
-
-        call_count = [0]
-
-        class MockStreamContext:
-            async def __aenter__(self):
-                call_count[0] += 1
-                raise httpx.ConnectError("Connection refused")
-
-            async def __aexit__(self, *args):
-                pass
-
-        self.client._client.stream = Mock(return_value=MockStreamContext())
-
-        with self.assertRaises(OllamaConnectionError):
-            async for _ in self.client.generate(request):
-                pass
-
-        assert call_count[0] == 3, (call_count[0], 3)
-
-    async def test_e2e_generate_workflow(self):
-        """Test end-to-end generate workflow (requires Ollama server)."""
-        request = GenerateRequest(
-            model="granite4.1:3b",
-            prompt="Say hello",
-            options=GenerationOptions(num_predict=10),
-        )
-
-        chunks = []
-        async for chunk in self.client.generate(request):
-            chunks.append(chunk)
-            if chunk.done:
-                break
-
-        assert len(chunks) > 0, chunks
-        assert any(chunk.response for chunk in chunks), chunks
-        assert chunks[-1].done, chunks[-1].done
 
 
 if __name__ == "__main__":

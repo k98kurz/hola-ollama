@@ -27,6 +27,9 @@ pip install -e .          # Install package for most manual testing
 9. Do NOT use `python -m unittest discover tests` when making small changes in
   files covered by specific test files. Just execute the correct test file. DO
   NOT RUN ALL TESTS ALL THE TIME.
+10. Write concise, meaningful tests, not a thousand pointless tests. Test important
+  details, not irrelevant shite. Don't write a dozen test classes with 2 cases each;
+  test classes should bundle related test methods together.
 
 # Agent Memory
 
