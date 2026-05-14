@@ -13,7 +13,11 @@ with deterministic execution guarantees and reasonable security measures.
     - [x] FS IO: grep, find, ls, read, write, edit, append, rm, mv, cp
     - [x] Context Management: memorize, recall
     - [ ] Arbitrary Computation: calculate, python (sandboxed)
-    - [ ] Subagent tool that can call bundled agents
+    - [ ] Orchestration:
+      - All phases: launch_subagent (launches a subagent with a prompt)
+      - PLAN phase: view_tasks, add_task, move_task, delete_task
+      - EXECUTE phase: complete_task
+      - REVIEW phase: reject_task, accept_task
     - No bash/cmd tool. The goal is to enforce ACL so agents can't run wild, so
       there will be a handful of useful tools to obviate the need for bash/cmd.
   - [x] Monadic tool call support (i.e. chaining of tools), passing outputs as
@@ -22,7 +26,8 @@ with deterministic execution guarantees and reasonable security measures.
     - `write("backup.txt", recall("original-file"))`
   - [x] Tool system allows template interpolation of memorized values, e.g.
     - `python("python code ${original-file}")`
-- [ ] Bundled agents: general and research
+- [ ] Bundled top-level workflows: general and research
+- [ ] Bundled dedicated subagents: execute and discover
 - [ ] Benchmarking tools for testing models
 - [ ] Ability to include multiple models within an agentic workflow
 - [ ] Context gates definable at each workflow step

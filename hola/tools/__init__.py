@@ -22,3 +22,4 @@ from hola.tools.compat import (
     parse_tool_calls_from_xml,
 )
 from hola.tools.bundled import *  # Registers all bundled tools
+from hola.tools.python_executor import python  # Registers python tool

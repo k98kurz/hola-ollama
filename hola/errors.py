@@ -165,3 +165,11 @@ def validated_dataclass(cls):
 
     cls.__post_init__ = __post_init__
     return dataclass(cls, slots=True)
+
+
+class PermissionDeniedError(Exception):
+    """Raised when file operation is denied by permissions."""
+
+
+class VerificationException(Exception):
+    """Raised when code violates the AST blacklist."""
