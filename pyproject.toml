@@ -33,7 +33,10 @@ hola = "hola.cli:main"
 
 [project.optional-dependencies]
 docs = [
-  "autodox >= 0.1.16"
+  "autodox == 0.1.16"
+]
+numpy = [
+  "numpy == 2.4.4"
 ]
 
 [tool.hatch.build.targets.wheel]

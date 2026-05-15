@@ -6,6 +6,9 @@ with deterministic execution guarantees and reasonable security measures.
 ## Features / Status
 
 - [x] Finite State Machines for workflows
+- [ ] Basic RAG prompt generation
+- [ ] Vector db extension for RAG prompt generation
+- [ ] Context gates definable at each workflow step
 - Tool system
   - [x] Tool calling for tool-enabled models
   - [x] XML-based workaround for models that do not natively support tools
@@ -30,8 +33,10 @@ with deterministic execution guarantees and reasonable security measures.
 - [ ] Bundled dedicated subagents: execute and discover
 - [ ] Benchmarking tools for testing models
 - [ ] Ability to include multiple models within an agentic workflow
-- [ ] Context gates definable at each workflow step
 - [x] Rigid but extensible permission system
+- [ ] Plugin system for tools
+- [ ] Skill system supporting skill installation in hola-specific locations as well
+  as .agents/, .claude/, .opencode/, .cursor/ within the CWD
 
 ## Testing
 
