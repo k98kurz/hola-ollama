@@ -18,6 +18,7 @@ import sys
 DEFAULT_ALLOWED_MODULES = [
     # stdlib
     'collections',
+    'dataclasses',
     'datetime',
     'decimal',
     'fractions',
@@ -29,7 +30,6 @@ DEFAULT_ALLOWED_MODULES = [
     'statistics',
     'struct',
     'time',
-    'typing',
     # 3rd party libs
     'autodox',
     'flying_state_machines',
@@ -45,6 +45,25 @@ AST_BLACKLIST = [
     ast.Delete,
     ast.Nonlocal,
     ast.Global,
+]
+
+
+METHOD_CALL_BLACKLIST = [
+    '__getattribute__',
+    '__getattr__',
+    '__setattr__',
+    '__delattr__',
+]
+
+
+ATTRIBUTE_BLACKLIST = [
+    '__builtins__',
+    '__globals__',
+    '__class__',
+    '__subclasses__',
+    '__bases__',
+    '__mro__',
+    '__code__',
 ]
 
 
@@ -95,6 +114,18 @@ def _verify_blacklist(code: str, allow_open: bool = False) -> None:
                     raise VerificationException(
                         f"Blacklisted function call: {func_name}"
                     )
+
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr in METHOD_CALL_BLACKLIST:
+                raise VerificationException(
+                    f"Blacklisted method call: {node.func.attr}"
+                )
+
+        if isinstance(node, ast.Attribute):
+            if node.attr in ATTRIBUTE_BLACKLIST:
+                raise VerificationException(
+                    f"Blacklisted attribute: {node.attr}"
+                )
 
 
 class _RestrictedImport:
@@ -212,7 +243,7 @@ class _RestrictedOpenFunc:
         perm = self.sess.get_file_permission(file)
 
         required_read = 'r' in mode or '+' in mode
-        required_write = 'w' in mode or 'a' in mode or '+' in mode
+        required_write = 'w' in mode or 'a' in mode or '+' in mode or 'x' in mode
 
         if required_read and not perm.read:
             raise PermissionDeniedError(

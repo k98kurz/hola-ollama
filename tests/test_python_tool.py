@@ -21,11 +21,18 @@ class TestPythonTool(unittest.TestCase):
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
-    def test_safe_code_passes(self):
+    def test_safe_code_passes_blacklist(self):
         _verify_blacklist("x = 1 + 2")
         _verify_blacklist("print('hello')")
         _verify_blacklist("for i in range(10):\n    pass")
         _verify_blacklist("def foo():\n    return 42")
+        _verify_blacklist("class M: pass\nm = M()\nm.abc = 123")
+        _verify_blacklist("s = str()\nprint(s.__str__())")
+        _verify_blacklist("s = str()\nprint(s.__len__())")
+        _verify_blacklist("s = str()\nprint(s.__repr__())")
+        _verify_blacklist("obj = object()\nprint(obj.__dict__)")
+        _verify_blacklist("def f(): pass\nprint(f.__name__)")
+        _verify_blacklist("type('str') is str")
 
     def test_syntax_error(self):
         with self.assertRaises(VerificationException) as e:
@@ -44,7 +51,7 @@ class TestPythonTool(unittest.TestCase):
                 _verify_blacklist(code)
             assert "Blacklisted AST node" in str(e.exception), e.exception
 
-    def test_dangerous_functions_blocked(self):
+    def test_dangerous_code_blocked(self):
         test_cases = [
             ("exec('x = 1')", "exec"),
             ("eval('1 + 1')", "eval"),
@@ -55,13 +62,34 @@ class TestPythonTool(unittest.TestCase):
             ("delattr(obj, 'attr')", "delattr"),
             ("exit()", "exit"),
             ("quit()", "quit"),
+            ("s=object(); s.__getattribute__('abc')", "__getattribute__"),
+            ("s=object(); s.__getattr__('x')", "__getattr__"),
+            ("s=object(); s.__setattr__('x', 1)", "__setattr__"),
+            ("s=object(); s.__delattr__('x')", "__delattr__"),
+            ("def f(): pass; f.__globals__", "__globals__"),
+            ("object().__class__.__subclasses__()", "__subclasses__"),
+            ("type().__bases__", "__bases__"),
+            ("type().__mro__", "__mro__"),
+            ("def f(): pass; f.__code__", "__code__"),
+            ("import json\njson.__builtins__['open']('test.txt', 'w')", "__builtins__"),
+            ("""
+for cls in ().__class__.__bases__[0].__subclasses__():
+    # Find a class defined in the 'os' module
+    if cls.__name__ == '_wrap_close':
+        # Access the 'os' module's dictionary via the function's globals
+        os_globals = cls.__init__.__globals__
+
+        # We now have full access to the 'os' module
+        os_globals['system']('echo "Sandbox escaped via os.system!"')
+        break""", "__subclasses__"),
         ]
         for code, func_name in test_cases:
-            with self.assertRaises(VerificationException) as e:
+            with self.assertRaises(VerificationException, msg=code) as e:
                 _verify_blacklist(code)
-            assert "Blacklisted function call" in str(e.exception), (
-                str(e.exception)
-            )
+            assert (
+                "Blacklisted" in str(e.exception)
+                or "not in allowlist" in str(e.exception)
+            ), str(e.exception)
             assert func_name in str(e.exception), str(e.exception)
 
     def test_default_allowed_modules_defined(self):
