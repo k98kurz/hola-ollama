@@ -13,30 +13,34 @@ pip install -e .          # Install package for most manual testing
 
 # Testing & Building Convention
 
-1. When writing ephemeral test code, use a minimum number of print statements to
+- When writing ephemeral test code, use a minimum number of print statements to
   conserve output tokens.
-2. When testing ollama anything, use granite4.1:3b as the model.
-3. For the Build agent: use todo lists to track your work for anything non-trivial
-4. If you encounter anything requiring a major change in plans, stop and discuss
-5. Do not worry about backwards compatibility; this project is under development,
+- When testing ollama anything, use granite4.1:3b as the model.
+- For the Build agent: use todo lists to track your work for anything non-trivial
+- If you encounter anything requiring a major change in plans, stop and discuss
+- Do not worry about backwards compatibility; this project is under development,
   incomplete, and has never been used anywhere.
-6. Do NOT use pytest. This project uses unittest EXCLUSIVELY.
-7. Do NOT worry about backwards compatibility. This project is WIP and unused. Just
+- Do NOT use pytest. This project uses unittest EXCLUSIVELY.
+- Use bare assert statements where possible in tests, not `self.assertX`
+  - Exception: use `with self.assertRaises(SomeErrorClass) as e:` when testing errors
+- Do NOT worry about backwards compatibility. This project is WIP and unused. Just
   make the changes.
-8. Do NOT waste time calling bash or python just to print out summaries.
-9. Do NOT use `python -m unittest discover tests` when making small changes in
+- Do NOT waste time calling bash or python just to print out summaries.
+- Do NOT use `python -m unittest discover tests` when making small changes in
   files covered by specific test files. Just execute the correct test file. DO
   NOT RUN ALL TESTS ALL THE TIME.
-10. Write concise, meaningful tests, not a thousand pointless tests. Test important
+- Write concise, meaningful tests, not a thousand pointless tests. Test important
   details, not irrelevant shite. Don't write a dozen test classes with 2 cases each;
   test classes should bundle related test methods together.
 
-# Agent Memory
+## Agent Memory
 
-Agents should record important information they encounter during their work in
-`docs/memory.md`. This helps preserve knowledge between sessions and prevents
-the need to rediscover information that has already been learned. See that file
-for details on what and how to record.
+`docs/memory.md` contains important architectural decisions, patterns, and gotchas
+that have been learned through development. Agents should read this file before
+starting work to avoid rediscovering information or making the same mistakes.
+
+Note: This file is NOT for agents to automatically write to. It contains curated
+knowledge maintained by the user.
 
 # Code Style
 
