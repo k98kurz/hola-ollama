@@ -226,7 +226,7 @@ class _RestrictedOpenFunc:
 
         return self.original_open(file, mode, *args, **kwargs)
 
- 
+
 def _execute_with_timeout(
         code: str, timeout: int, allowed_modules: list[str], restricted_open=None
     ) -> tuple[str, str]:
@@ -245,7 +245,9 @@ def _execute_with_timeout(
 
     if process.is_alive():
         process.terminate()
-        process.join()
+        process.join(0.1)
+        if process.is_alive():
+            process.kill()
         raise TimeoutError(f"Code execution exceeded {timeout}s timeout")
 
     process.close()
