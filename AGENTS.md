@@ -15,8 +15,9 @@ pip install -e .          # Install package for most manual testing
 
 - When writing ephemeral test code, use a minimum number of print statements to
   conserve output tokens.
+- Use the temp/ directory in the project for temporary files.
 - When testing ollama anything, use granite4.1:3b as the model.
-- For the Build agent: use todo lists to track your work for anything non-trivial
+- For the Build agent: use todo.md to track your work for anything non-trivial
 - If you encounter anything requiring a major change in plans, stop and discuss
 - Do not worry about backwards compatibility; this project is under development,
   incomplete, and has never been used anywhere.
