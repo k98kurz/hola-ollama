@@ -11,8 +11,7 @@ import math
 import re
 
 
-RESERVED_IDENTIFIERS = {
-    "pi", "e", "phi",
+FUNCTIONS = {
     "+", "-", "*", "/", "%", "^", "!",
     "sum", "avg", "stdev", "var", "median", "mode",
     "sin", "cos", "tan", "asin", "acos", "atan",
@@ -20,6 +19,8 @@ RESERVED_IDENTIFIERS = {
     "sqrt", "abs", "round", "floor", "ceil",
     "exp", "ln", "log", "gcd", "lcm", "mod",
 }
+CONSTANTS = {"pi", "e", "phi"}
+RESERVED_IDENTIFIERS = CONSTANTS.union(FUNCTIONS)
 
 
 class AssignmentNode:
@@ -137,14 +138,10 @@ class Parser:
     """Parser for token stream into AST nodes."""
     def __init__(self, tokenizer: Tokenizer):
         self.tokenizer = tokenizer
-        self.parsing_depth = 0
-        self.inside_parens = False
 
     def parse(self) -> list[Any]:
         """Parse the token stream into a list of AST nodes."""
         nodes = []
-        self.parsing_depth = 0
-        self.inside_parens = False
         while self.tokenizer.has_more():
             token = self.tokenizer.peek()
             if token == ";":
@@ -189,8 +186,7 @@ class Parser:
         elif token in (")", "]", ","):
             raise ToolExecutionError(f"Unexpected token: {token}")
         else:
-            is_toplevel = self.parsing_depth == 0
-            result = self._parse_identifier(is_toplevel)
+            result = self._parse_identifier()
             return result
 
     def _parse_identifier(self, is_toplevel: bool = False) -> Any:
@@ -205,28 +201,13 @@ class Parser:
         if next_tok in (None, ";", ")", "]", ","):
             return VariableNode(token)
 
-        if next_tok == "(":
-            arg = self._parse_parenthesized()
-            return FunctionCallNode(token, [arg])
-
-        if is_toplevel and self._starts_value(next_tok):
-            self.parsing_depth += 1
+        if token in FUNCTIONS:
             args = []
-            while self.tokenizer.has_more() and self.tokenizer.peek() not in (
-                ";", ")", "]", ","
-            ):
+            while self.tokenizer.has_more():
+                peek = self.tokenizer.peek()
+                if peek in (None, ";", ")", "]", ","):
+                    break
                 args.append(self._parse_expression())
-            self.parsing_depth -= 1
-            return FunctionCallNode(token, args)
-
-        if self.inside_parens and self._starts_value(next_tok):
-            self.parsing_depth += 1
-            args = []
-            while self.tokenizer.has_more() and self.tokenizer.peek() not in (
-                ";", ")", "]", ","
-            ):
-                args.append(self._parse_expression())
-            self.parsing_depth -= 1
             return FunctionCallNode(token, args)
 
         return VariableNode(token)
