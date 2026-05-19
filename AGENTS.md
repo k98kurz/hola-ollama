@@ -17,7 +17,11 @@ pip install -e .          # Install package for most manual testing
   conserve output tokens.
 - Use the temp/ directory in the project for temporary files.
 - When testing ollama anything, use granite4.1:3b as the model.
-- For the Build agent: use todo.md to track your work for anything non-trivial
+- For the Build agent: you MUST use todo.md to track your work for anything non-trivial
+  - Make sure you keep the todo.md file concise
+  - Include only the most important information necessary to survive context compactions
+  - Once something is done, REMOVE IT from todo.md; do NOT fill the file with
+    self-congratulatory notes
 - If you encounter anything requiring a major change in plans, stop and discuss
 - Do not worry about backwards compatibility; this project is under development,
   incomplete, and has never been used anywhere.

@@ -2,11 +2,12 @@
 E2E tests for calculate tool.
 """
 
-import asyncio
-import unittest
 from hola.session.session import Session
 from hola.tools.core import execute_tool_call, list_tools
 from hola.tools.types import ToolCall, ToolCallFunction
+import ast
+import asyncio
+import unittest
 
 
 async def test(session_name: str, cases: list[tuple]):
@@ -263,8 +264,11 @@ class TestCalculate(unittest.TestCase):
     def test_complex_syntax_e2e(self):
         """Test complex syntax: multiple statements, nesting, sequential returns."""
         COMPLEX_SYNTAX_TESTS: list[tuple[str, list[str]]] = [
-            (":= a 1; := b 2; := r1 (+ b (* a 3)); := r2 (+ b (* a 4)); r1; r2; sum r1 r2",
-             ["5.0", "6.0", "11.0"]),
+            (
+                ":= a 1; := b 2; := r1 (+ b (* a 3)); := r2 (+ b (* a 4)); r1; "
+                "r2; sum r1 r2",
+                ["5.0", "6.0", "11.0"]
+            ),
             ("* 2 pi", ["6.283185307179586"]),
             ("sin (/ (* pi 2) 3)", ["0.8660254037844387"]),
             (":= a 5; a; * a 2; sqrt a; sqrt (* a 4)",
@@ -275,6 +279,204 @@ class TestCalculate(unittest.TestCase):
             ("+ 1 2; * 3 4; ^ 2 3; % 10 3", ["3.0", "12.0", "8.0", "1.0"]),
         ]
         asyncio.run(test("test_calc_complex_syntax", COMPLEX_SYNTAX_TESTS))
+
+    def test_linear_algebra_numpy_mode(self):
+        """Test linear algebra operations in NumPy mode (precision=0)."""
+        LINEAR_ALGEBRA_TESTS: list[tuple[str, list[str]]] = [
+            ("norm [3 4]", ["5.0"]),
+            ("dot [1 2 3] [4 5 6]", ["32.0"]),
+            ("cross [1 0 0] [0 1 0]", ["0.0", "0.0", "1.0"]),
+            ("unit [3 4]", ["0.6", "0.8"]),
+            ("angle [1 0] [0 1]", ["1.5707963267948966"]),
+            (
+                "transpose [[1 2 3] [4 5 6]]",
+                ["[[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]"]
+            ),
+            ("det [[1 2] [3 4]]", ["-2.0"]),
+            ("inv [[1 2] [3 4]]", ["[[-2.0, 1.0], [1.5, -0.5]]"]),
+            ("trace [[1 2] [3 4]]", ["5.0"]),
+            ("rank [[1 2] [2 4]]", ["1.0"]),
+            ("solve [[1 2] [3 4]] [5 11]", ["1.0", "2.0"]),
+            ("matmul [[1 2] [3 4]] [[5 6] [7 8]]", ["[[19.0, 22.0], [43.0, 50.0]]"]),
+            ("+ [[1 2] [3 4]] [[5 6] [7 8]]", ["[[6.0, 8.0], [10.0, 12.0]]"]),
+            ("* [[1 2] [3 4]] 2", ["[[2.0, 4.0], [6.0, 8.0]]"]),
+            (
+                "lu [[1 2] [3 4]]",
+                ["[[[1.0, 0.0], [3.0, 1.0]], [[1.0, 2.0], [0.0, -2.0]]]"]
+            ),
+            (
+                "qr [[1 2] [3 4]]",
+                [
+                    "[[[-0.316227766016838, -0.9486832980505138], "
+                    "[-0.9486832980505138, 0.316227766016838]], "
+                    "[[-3.1622776601683795, -4.427188724235731], "
+                    "[0.0, -0.6324555320336751]]]"
+                ]
+            ),
+            ("det [[2 1 0] [1 2 1] [0 1 2]]", ["4.0"]),
+            ("trace [[1 2 3] [4 5 6] [7 8 9]]", ["15.0"]),
+            ("rank [[1 0 0] [0 1 0] [0 0 1]]", ["3.0"]),
+            ("angle [1 1 1] [2 2 2]", ["0.0"]),
+            ("angle [1 0 0] [0 1 0]", ["1.5707963267948966"]),
+            ("norm [0 0 0]", ["0.0"]),
+            ("det [[1 2 3] [4 5 6] [7 8 9]]", ["0.0"]),
+            (
+                "transpose [[1 2 3] [4 5 6]]",
+                ["[[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]"]
+            ),
+            ("inv [[1 0] [0 1]]", ["[[1.0, 0.0], [0.0, 1.0]]"]),
+            ("- [[1 2] [3 4]] [[5 6] [7 8]]", ["[[-4.0, -4.0], [-4.0, -4.0]]"]),
+            ("/ [[2 4] [6 8]] 2", ["[[1.0, 2.0], [3.0, 4.0]]"]),
+        ]
+        
+        def fuzzy_compare(result: str, expected: str) -> bool:
+            """Compare result with expected using fuzzy matching for floats."""
+            if result == expected:
+                return True
+            # Handle nested list strings for matrices
+            if result.startswith('[[') and expected.startswith('[['):
+                r_vals = [
+                    [float(x) for x in row] for row in ast.literal_eval(result)
+                ]
+                e_vals = [
+                    [float(x) for x in row] for row in ast.literal_eval(expected)
+                ]
+                return all(
+                    abs(r - e) < 1e-9
+                    for r_row, e_row in zip(r_vals, e_vals)
+                    for r, e in zip(r_row, e_row)
+                )
+            # Handle simple list strings for vectors
+            if  (   result.startswith('[')
+                    and expected.startswith('[')
+                    and not result.startswith('[[')
+                ):
+                r_vals = [float(x) for x in ast.literal_eval(result)]
+                e_vals = [float(x) for x in ast.literal_eval(expected)]
+                return all(abs(r - e) < 1e-9 for r, e in zip(r_vals, e_vals))
+            try:
+                return abs(float(result) - float(expected)) < 1e-9
+            except ValueError:
+                return False
+        
+        async def test():
+            session = Session("test_calc_linear_numpy", portable=True)
+            for expression, expected in LINEAR_ALGEBRA_TESTS:
+                call = ToolCall(
+                    function=ToolCallFunction(
+                        name="calculate",
+                        arguments={"expression": expression, "precision": 0},
+                    ),
+                )
+                result = await execute_tool_call(call, session)
+                assert len(result) == len(expected), (
+                    f"Failed for {expression}: expected {len(expected)} results, "
+                    f"got {len(result)}"
+                )
+                for r, e in zip(result, expected):
+                    assert fuzzy_compare(r, e), (
+                        f"Failed for {expression}: expected {e}, got {r}"
+                    )
+            session.delete()
+        asyncio.run(test())
+
+    def test_linear_algebra_precision_mode(self):
+        """Test linear algebra operations in precision mode."""
+        LINEAR_ALGEBRA_TESTS: list[tuple[str, list[str]]] = [
+            ("norm [3 4]", ["5"]),
+            ("dot [1 2 3] [4 5 6]", ["32"]),
+            ("cross [1 0 0] [0 1 0]", ["[0, 0, 1]"]),
+            ("unit [3 4]", ["[0.6, 0.8]"]),
+            ("angle [1 0] [0 1]", ["1.570796327"]),
+            (
+                "transpose [[1 2 3] [4 5 6]]",
+                ["[[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]"]
+            ),
+            ("det [[1 2] [3 4]]", ["-2"]),
+            ("inv [[1 2] [3 4]]", ["[[-2.0, 1.0], [1.5, -0.5]]"]),
+            ("trace [[1 2] [3 4]]", ["5"]),
+            ("rank [[1 2] [2 4]]", ["1"]),
+            ("solve [[1 2] [3 4]] [5 11]", ["[1, 2]"]),
+            ("matmul [[1 2] [3 4]] [[5 6] [7 8]]", ["[[19.0, 22.0], [43.0, 50.0]]"]),
+            (
+                "matmul [[1, 2], [3, 4]], [[5, 6], [7, 8]]",
+                ["[[19.0, 22.0], [43.0, 50.0]]"]
+            ),
+            ("+ [[1 2] [3 4]] [[5 6] [7 8]]", ["[[6.0, 8.0], [10.0, 12.0]]"]),
+            ("* [[1 2] [3 4]] 2", ["[[2.0, 4.0], [6.0, 8.0]]"]),
+            (
+                "lu [[1 2] [3 4]]",
+                ["[[[1.0, 0.0], [3.0, 1.0]], [[1.0, 2.0], [0.0, -2.0]]]"]
+            ),
+            (
+                "qr [[1 2] [3 4]]",
+                [
+                    "[[[0.316227766, 0.9486832981], "
+                    "[0.9486832981, -0.316227766]], "
+                    "[[3.16227766, 4.427188724], "
+                    "[0.0, 0.632455532]]]"
+                ]
+            ),
+            ("det [[2 1 0] [1 2 1] [0 1 2]]", ["3.999999999"]),
+            ("trace [[1 2 3] [4 5 6] [7 8 9]]", ["15"]),
+            ("rank [[1 0 0] [0 1 0] [0 0 1]]", ["3"]),
+            ("angle [1 1 1] [2 2 2]", ["0.00002000000083"]),
+            ("angle [1 0 0] [0 1 0]", ["1.570796327"]),
+            ("norm [0 0 0]", ["0"]),
+            ("det [[1 2 3] [4 5 6] [7 8 9]]", ["0"]),
+            (
+                "transpose [[1 2 3] [4 5 6]]",
+                ["[[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]"]
+            ),
+            ("inv [[1 0] [0 1]]", ["[[1.0, 0.0], [0.0, 1.0]]"]),
+            ("- [[1 2] [3 4]] [[5 6] [7 8]]", ["[[-4.0, -4.0], [-4.0, -4.0]]"]),
+            ("/ [[2 4] [6 8]] 2", ["[[1.0, 2.0], [3.0, 4.0]]"]),
+        ]
+        async def test():
+            session = Session("test_calc_linear_precision", portable=True)
+            for expression, expected in LINEAR_ALGEBRA_TESTS:
+                call = ToolCall(
+                    function=ToolCallFunction(
+                        name="calculate",
+                        arguments={"expression": expression, "precision": 10},
+                    ),
+                )
+                result = await execute_tool_call(call, session)
+                assert result == expected, (
+                    f"Failed for {expression}: expected {expected}, got {result}"
+                )
+            session.delete()
+        asyncio.run(test())
+
+    def test_linear_algebra_error_cases(self):
+        """Test error handling for linear algebra operations."""
+        LINEAR_ALGEBRA_ERROR_TESTS: list[tuple[str, str]] = [
+            ("inv [[1 1] [1 1]]", "Matrix is singular"),
+            ("solve [[1 1] [1 1]] [2 2]", "Singular matrix"),
+            ("det [[1 2 3] [4 5 6]]", "square matrix"),
+            ("inv [[1 2 3] [4 5 6]]", "square matrix"),
+            ("cross [1 2] [3 4]", "Cross product requires 3D vectors"),
+            ("+ [[1 2]] [[3 4 5]]", "Dimension mismatch"),
+            ("- [[1 2 3] [4 5 6]] [[7 8]]", "Dimension mismatch"),
+        ]
+        async def test():
+            session = Session("test_calc_linear_errors", portable=True)
+            from hola.ollama.exceptions import ToolExecutionError
+            for expression, expected_error in LINEAR_ALGEBRA_ERROR_TESTS:
+                call = ToolCall(
+                    function=ToolCallFunction(
+                        name="calculate",
+                        arguments={"expression": expression, "precision": 10},
+                    ),
+                )
+                with self.assertRaises(ToolExecutionError) as e:
+                    await execute_tool_call(call, session)
+                assert expected_error.lower() in str(e.exception).lower(), (
+                    f"Expected '{expected_error}' in error for {expression}, "
+                    f"got {e.exception}"
+                )
+            session.delete()
+        asyncio.run(test())
 
 
 if __name__ == "__main__":
