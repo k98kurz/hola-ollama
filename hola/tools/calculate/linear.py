@@ -10,8 +10,14 @@ from typing import Any
 from hola.ollama.exceptions import ToolExecutionError
 import math
 
+
 _numpy_mode: bool | None = None
 
+
+try:
+    import numpy as np
+except ImportError:
+    _numpy_mode = False
 
 def set_numpy_mode(force: bool | None) -> None:
     """Set numpy mode for testing. None=auto, True=force numpy, False=force custom."""
@@ -22,10 +28,14 @@ def set_numpy_mode(force: bool | None) -> None:
 def _use_numpy(precision: int) -> bool:
     """Check if numpy should be used based on precision and mode setting."""
     try:
-        import numpy as np
         return precision == 0 and _numpy_mode is not False
     except ImportError:
         return False
+
+
+def _use_float_mode(precision: int) -> bool:
+    """Check if float fallback mode should be used."""
+    return precision == 0 and not _use_numpy(precision)
 
 
 def _is_scalar(x: Any) -> bool:
@@ -429,26 +439,22 @@ class Matrix:
 
 def _norm_numpy(x: list[float]) -> float:
     """Compute norm using numpy."""
-    import numpy as np
     arr = np.array(x, dtype=np.float64)
     return float(np.linalg.norm(arr))
 
 
 def _dot_numpy(v1: list[float], v2: list[float]) -> float:
     """Compute dot product using numpy."""
-    import numpy as np
     return float(np.dot(np.array(v1), np.array(v2)))
 
 
 def _cross_numpy(v1: list[float], v2: list[float]) -> list[float]:
     """Compute cross product using numpy."""
-    import numpy as np
     return [float(x) for x in np.cross(np.array(v1), np.array(v2))]
 
 
 def _unit_numpy(v: list[float]) -> list[float]:
     """Compute unit vector using numpy."""
-    import numpy as np
     arr = np.array(v, dtype=np.float64)
     norm = np.linalg.norm(arr)
     if norm < 1e-10:
@@ -458,7 +464,6 @@ def _unit_numpy(v: list[float]) -> list[float]:
 
 def _angle_numpy(v1: list[float], v2: list[float]) -> float:
     """Compute angle between vectors using numpy."""
-    import numpy as np
     a, b = np.array(v1), np.array(v2)
     dot = np.dot(a, b)
     norms = np.linalg.norm(a) * np.linalg.norm(b)
@@ -470,13 +475,11 @@ def _angle_numpy(v1: list[float], v2: list[float]) -> float:
 
 def _transpose_numpy(m: list[list[float]]) -> list[list[float]]:
     """Compute transpose using numpy."""
-    import numpy as np
     return [[float(x) for x in row] for row in np.array(m).T.tolist()]
 
 
 def _det_numpy(m: list[list[float]]) -> float:
     """Compute determinant using numpy."""
-    import numpy as np
     det = np.linalg.det(np.array(m, dtype=np.float64))
     if abs(det) < 1e-10:
         return 0.0
@@ -485,7 +488,6 @@ def _det_numpy(m: list[list[float]]) -> float:
 
 def _inv_numpy(m: list[list[float]]) -> list[list[float]]:
     """Compute inverse using numpy."""
-    import numpy as np
     arr = np.array(m, dtype=np.float64)
     if abs(np.linalg.det(arr)) < 1e-10:
         raise ToolExecutionError("Matrix is singular (determinant is zero)")
@@ -494,19 +496,16 @@ def _inv_numpy(m: list[list[float]]) -> list[list[float]]:
 
 def _trace_numpy(m: list[list[float]]) -> float:
     """Compute trace using numpy."""
-    import numpy as np
     return float(np.trace(np.array(m, dtype=np.float64)))
 
 
 def _rank_numpy(m: list[list[float]]) -> int:
     """Compute rank using numpy."""
-    import numpy as np
     return int(np.linalg.matrix_rank(np.array(m, dtype=np.float64), tol=1e-10))
 
 
 def _solve_numpy(A: list[list[float]], b: list[float]) -> list[float]:
     """Solve linear system using numpy."""
-    import numpy as np
     A_arr = np.array(A, dtype=np.float64)
     if abs(np.linalg.det(A_arr)) < 1e-10:
         raise ToolExecutionError("Singular matrix in linear system")
@@ -515,7 +514,6 @@ def _solve_numpy(A: list[list[float]], b: list[float]) -> list[float]:
 
 def _lu_numpy(m: list[list[float]]) -> list[list[list[float]]]:
     """Compute LU decomposition using numpy."""
-    import numpy as np
     arr = np.array(m, dtype=np.float64)
     n = len(m)
     L_data = [[0.0] * n for _ in range(n)]
@@ -542,7 +540,6 @@ def _lu_numpy(m: list[list[float]]) -> list[list[list[float]]]:
 
 def _qr_numpy(m: list[list[float]]) -> list[list[list[float]]]:
     """Compute QR decomposition using numpy."""
-    import numpy as np
     Q, R = np.linalg.qr(np.array(m, dtype=np.float64))
     Q_list = [[float(x) for x in row] for row in Q.tolist()]
     R_list = [[float(x) for x in row] for row in R.tolist()]
@@ -554,7 +551,290 @@ def _matmul_numpy(
     B: list[list[float]] | list[float]
 ) -> list[list[float]] | list[float]:
     """Matrix multiplication using numpy."""
-    import numpy as np
     if _is_vector(B):
         return [float(x) for x in np.array(A) @ np.array(B)]
     return [[float(x) for x in row] for row in (np.array(A) @ np.array(B)).tolist()]
+
+
+def _norm_float(x: list[float]) -> float:
+    """Compute norm using pure Python float."""
+    return math.sqrt(sum(v * v for v in x))
+
+
+def _dot_float(v1: list[float], v2: list[float]) -> float:
+    """Compute dot product using pure Python float."""
+    return sum(a * b for a, b in zip(v1, v2))
+
+
+def _cross_float(v1: list[float], v2: list[float]) -> list[float]:
+    """Compute cross product using pure Python float."""
+    if len(v1) != 3 or len(v2) != 3:
+        raise ToolExecutionError("Cross product requires 3D vectors")
+    return [
+        v1[1] * v2[2] - v1[2] * v2[1],
+        v1[2] * v2[0] - v1[0] * v2[2],
+        v1[0] * v2[1] - v1[1] * v2[0],
+    ]
+
+
+def _unit_float(v: list[float]) -> list[float]:
+    """Compute unit vector using pure Python float."""
+    norm = _norm_float(v)
+    if norm < 1e-10:
+        raise ToolExecutionError("Cannot normalize zero vector")
+    return [x / norm for x in v]
+
+
+def _angle_float(v1: list[float], v2: list[float]) -> float:
+    """Compute angle between vectors using pure Python float."""
+    dot_val = _dot_float(v1, v2)
+    norms = _norm_float(v1) * _norm_float(v2)
+    if norms < 1e-10:
+        raise ToolExecutionError("Cannot compute angle with zero vector")
+    cos_val = max(-1.0, min(1.0, dot_val / norms))
+    return math.acos(cos_val)
+
+
+def _transpose_float(m: list[list[float]]) -> list[list[float]]:
+    """Compute transpose using pure Python float."""
+    return [[m[r][c] for r in range(len(m))] for c in range(len(m[0]))]
+
+
+def _det_float(m: list[list[float]]) -> float:
+    """Compute determinant using Gaussian elimination."""
+    n = len(m)
+    det = 1.0
+    m_copy = [[float(x) for x in row] for row in m]
+
+    for i in range(n):
+        pivot_row = i
+        for r in range(i, n):
+            if abs(m_copy[r][i]) > abs(m_copy[pivot_row][i]):
+                pivot_row = r
+        if abs(m_copy[pivot_row][i]) < 1e-10:
+            return 0.0
+        if pivot_row != i:
+            m_copy[i], m_copy[pivot_row] = m_copy[pivot_row], m_copy[i]
+            det *= -1
+        det *= m_copy[i][i]
+        pivot = m_copy[i][i]
+        for r in range(i + 1, n):
+            factor = m_copy[r][i] / pivot
+            for c in range(i, n):
+                m_copy[r][c] -= factor * m_copy[i][c]
+    return det
+
+
+def _trace_float(m: list[list[float]]) -> float:
+    """Compute trace using pure Python float."""
+    if len(m) != len(m[0]):
+        raise ToolExecutionError("Trace requires square matrix")
+    return sum(m[i][i] for i in range(len(m)))
+
+
+def _rank_float(m: list[list[float]]) -> int:
+    """Compute rank using Gaussian elimination."""
+    n_rows, n_cols = len(m), len(m[0])
+    m_copy = [[float(x) for x in row] for row in m]
+    rank = 0
+    row = 0
+    for col in range(n_cols):
+        pivot_row = None
+        for r in range(row, n_rows):
+            if abs(m_copy[r][col]) > 1e-10:
+                pivot_row = r
+                break
+        if pivot_row is None:
+            continue
+        m_copy[row], m_copy[pivot_row] = m_copy[pivot_row], m_copy[row]
+        pivot = m_copy[row][col]
+        for c in range(col, n_cols):
+            m_copy[row][c] /= pivot
+        for r in range(n_rows):
+            if r != row and abs(m_copy[r][col]) > 1e-10:
+                factor = m_copy[r][col]
+                for c in range(col, n_cols):
+                    m_copy[r][c] -= factor * m_copy[row][c]
+        row += 1
+        rank += 1
+        if row >= n_rows:
+            break
+    return rank
+
+
+def _inv_float(m: list[list[float]]) -> list[list[float]]:
+    """Compute inverse using Gaussian elimination."""
+    n = len(m)
+    if len(m[0]) != n:
+        raise ToolExecutionError("Inverse requires square matrix")
+    if abs(_det_float(m)) < 1e-10:
+        raise ToolExecutionError("Matrix is singular (determinant is zero)")
+    aug = [[float(m[i][j]) for j in range(n)] + [1.0 if j == i else 0.0 for j in range(n)]
+           for i in range(n)]
+    for i in range(n):
+        pivot = aug[i][i]
+        if abs(pivot) < 1e-10:
+            raise ToolExecutionError("Matrix is singular")
+        for j in range(2 * n):
+            aug[i][j] /= pivot
+        for r in range(n):
+            if r != i:
+                factor = aug[r][i]
+                for j in range(2 * n):
+                    aug[r][j] -= factor * aug[i][j]
+    return [[aug[i][j + n] for j in range(n)] for i in range(n)]
+
+
+def _solve_float(A: list[list[float]], b: list[float]) -> list[float]:
+    """Solve linear system using Gaussian elimination."""
+    n = len(A)
+    if len(A[0]) != n or len(b) != n:
+        raise ToolExecutionError("Linear system requires square matrix")
+    if abs(_det_float(A)) < 1e-10:
+        raise ToolExecutionError("Singular matrix in linear system")
+    aug = [[float(A[i][j]) for j in range(n)] + [float(b[i])] for i in range(n)]
+    for i in range(n):
+        pivot = aug[i][i]
+        if abs(pivot) < 1e-10:
+            raise ToolExecutionError("Singular matrix")
+        for j in range(i, n + 1):
+            aug[i][j] /= pivot
+        for r in range(i + 1, n):
+            factor = aug[r][i]
+            for j in range(i, n + 1):
+                aug[r][j] -= factor * aug[i][j]
+    x = [0.0] * n
+    for i in range(n - 1, -1, -1):
+        x[i] = aug[i][n] - sum(aug[i][j] * x[j] for j in range(i + 1, n))
+    return x
+
+
+def _lu_float(m: list[list[float]]) -> list[list[list[float]]]:
+    """Compute LU decomposition using pure Python float."""
+    n = len(m)
+    L_data = [[0.0] * n for _ in range(n)]
+    U_data = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        L_data[i][i] = 1.0
+        for k in range(i, n):
+            U_data[i][k] = float(m[i][k])
+            for j in range(i):
+                U_data[i][k] -= L_data[i][j] * U_data[j][k]
+        for k in range(i + 1, n):
+            L_data[k][i] = float(m[k][i])
+            for j in range(i):
+                L_data[k][i] -= L_data[k][j] * U_data[j][i]
+            if abs(U_data[i][i]) < 1e-10:
+                raise ToolExecutionError("Singular matrix in LU decomposition")
+            L_data[k][i] /= U_data[i][i]
+    return [L_data, U_data]
+
+
+def _qr_float(m: list[list[float]]) -> list[list[list[float]]]:
+    """Compute QR decomposition using Gram-Schmidt."""
+    n_rows, n_cols = len(m), len(m[0])
+    cols = [[float(m[r][c]) for r in range(n_rows)] for c in range(n_cols)]
+    Q_cols = []
+    R_data = [[0.0] * n_cols for _ in range(n_cols)]
+
+    for j in range(n_cols):
+        v = cols[j][:]
+        for i in range(j):
+            R_data[i][j] = _dot_float(Q_cols[i], v)
+            v = [v[k] - R_data[i][j] * Q_cols[i][k] for k in range(n_rows)]
+        R_data[j][j] = _norm_float(v)
+        if R_data[j][j] < 1e-10:
+            raise ToolExecutionError("QR decomposition failed")
+        Q_cols.append([v[k] / R_data[j][j] for k in range(n_rows)])
+
+    Q_data = [[Q_cols[c][r] for c in range(n_cols)] for r in range(n_rows)]
+    Q_normalized = [[-Q_data[i][j] for j in range(n_cols)] for i in range(n_rows)]
+    R_normalized = [[-R_data[i][j] for j in range(n_cols)] for i in range(n_cols)]
+    return [Q_normalized, R_normalized]
+
+
+def _matmul_float(
+    A: list[list[float]],
+    B: list[list[float]] | list[float]
+) -> list[list[float]] | list[float]:
+    """Matrix multiplication using pure Python float."""
+    if _is_vector(B):
+        B_col = [[float(b)] for b in B]
+        result = [[0.0] for _ in range(len(A))]
+        for i in range(len(A)):
+            for j in range(len(B)):
+                result[i][0] += A[i][j] * B_col[j][0]
+        return [result[i][0] for i in range(len(A))]
+    n = len(A)
+    m = len(B)
+    p = len(B[0])
+    result = [[0.0] * p for _ in range(n)]
+    for i in range(n):
+        for j in range(p):
+            for k in range(m):
+                result[i][j] += A[i][k] * B[k][j]
+    return result
+
+
+def _add_vectors_float(v1: list[float], v2: list[float]) -> list[float]:
+    """Add two vectors using pure Python float."""
+    return [a + b for a, b in zip(v1, v2)]
+
+
+def _add_matrices_float(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
+    """Add two matrices using pure Python float."""
+    return [[a + b for a, b in zip(r1, r2)] for r1, r2 in zip(m1, m2)]
+
+
+def _add_vector_scalar_float(v: list[float], s: float) -> list[float]:
+    """Add scalar to vector using pure Python float."""
+    return [x + s for x in v]
+
+
+def _add_matrix_scalar_float(m: list[list[float]], s: float) -> list[list[float]]:
+    """Add scalar to matrix using pure Python float."""
+    return [[x + s for x in row] for row in m]
+
+
+def _sub_vectors_float(v1: list[float], v2: list[float]) -> list[float]:
+    """Subtract two vectors using pure Python float."""
+    return [a - b for a, b in zip(v1, v2)]
+
+
+def _sub_matrices_float(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
+    """Subtract two matrices using pure Python float."""
+    return [[a - b for a, b in zip(r1, r2)] for r1, r2 in zip(m1, m2)]
+
+
+def _sub_vector_scalar_float(v: list[float], s: float) -> list[float]:
+    """Subtract scalar from vector using pure Python float."""
+    return [x - s for x in v]
+
+
+def _sub_matrix_scalar_float(m: list[list[float]], s: float) -> list[list[float]]:
+    """Subtract scalar from matrix using pure Python float."""
+    return [[x - s for x in row] for row in m]
+
+
+def _mul_vector_scalar_float(v: list[float], s: float) -> list[float]:
+    """Multiply vector by scalar using pure Python float."""
+    return [x * s for x in v]
+
+
+def _mul_matrix_scalar_float(m: list[list[float]], s: float) -> list[list[float]]:
+    """Multiply matrix by scalar using pure Python float."""
+    return [[x * s for x in row] for row in m]
+
+
+def _div_vector_scalar_float(v: list[float], s: float) -> list[float]:
+    """Divide vector by scalar using pure Python float."""
+    if abs(s) < 1e-10:
+        raise ToolExecutionError("Division by zero")
+    return [x / s for x in v]
+
+
+def _div_matrix_scalar_float(m: list[list[float]], s: float) -> list[list[float]]:
+    """Divide matrix by scalar using pure Python float."""
+    if abs(s) < 1e-10:
+        raise ToolExecutionError("Division by zero")
+    return [[x / s for x in row] for row in m]

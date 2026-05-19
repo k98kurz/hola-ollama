@@ -3,6 +3,7 @@ E2E tests for calculate tool.
 """
 
 from hola.session.session import Session
+from hola.tools.calculate.linear import set_numpy_mode
 from hola.tools.core import execute_tool_call, list_tools
 from hola.tools.types import ToolCall, ToolCallFunction
 import ast
@@ -28,6 +29,9 @@ async def test(session_name: str, cases: list[tuple]):
 
 class TestCalculate(unittest.TestCase):
     """E2E tests for calculate tool."""
+    def setUp(self):
+        set_numpy_mode(None)
+
     def test_tool_registration_and_schema(self):
         """Test that calculate tool is registered with correct schema."""
         tools = list_tools()
@@ -280,8 +284,8 @@ class TestCalculate(unittest.TestCase):
         ]
         asyncio.run(test("test_calc_complex_syntax", COMPLEX_SYNTAX_TESTS))
 
-    def test_linear_algebra_numpy_mode(self):
-        """Test linear algebra operations in NumPy mode (precision=0)."""
+    def test_linear_algebra_nonprecision_mode(self):
+        """Test linear algebra operations in non-precision mode (precision=0)."""
         LINEAR_ALGEBRA_TESTS: list[tuple[str, list[str]]] = [
             ("norm [3 4]", ["5.0"]),
             ("dot [1 2 3] [4 5 6]", ["32.0"]),
@@ -328,37 +332,58 @@ class TestCalculate(unittest.TestCase):
             ("- [[1 2] [3 4]] [[5 6] [7 8]]", ["[[-4.0, -4.0], [-4.0, -4.0]]"]),
             ("/ [[2 4] [6 8]] 2", ["[[1.0, 2.0], [3.0, 4.0]]"]),
         ]
-        
+
         def fuzzy_compare(result: str, expected: str) -> bool:
             """Compare result with expected using fuzzy matching for floats."""
             if result == expected:
                 return True
-            # Handle nested list strings for matrices
-            if result.startswith('[[') and expected.startswith('[['):
+
+            r_parsed = ast.literal_eval(result)
+            e_parsed = ast.literal_eval(expected)
+
+            if not isinstance(r_parsed, list) or not isinstance(e_parsed, list):
+                try:
+                    return abs(float(result) - float(expected)) < 1e-9
+                except ValueError:
+                    return False
+
+            # Handle nested list strings for matrices (list of matrices)
+            if (isinstance(r_parsed[0], list) and len(r_parsed[0]) > 0
+                    and isinstance(r_parsed[0][0], list)):
                 r_vals = [
-                    [float(x) for x in row] for row in ast.literal_eval(result)
+                    [[float(x) for x in row] for row in matrix]
+                    for matrix in r_parsed
                 ]
                 e_vals = [
-                    [float(x) for x in row] for row in ast.literal_eval(expected)
+                    [[float(x) for x in row] for row in matrix]
+                    for matrix in e_parsed
+                ]
+                return all(
+                    abs(r - e) < 1e-9
+                    for r_matrix, e_matrix in zip(r_vals, e_vals)
+                    for r_row, e_row in zip(r_matrix, e_matrix)
+                    for r, e in zip(r_row, e_row)
+                )
+
+            # Handle nested list strings for matrices (single matrix)
+            if (result.startswith('[[') and expected.startswith('[[')):
+                r_vals = [
+                    [float(x) for x in row] for row in r_parsed
+                ]
+                e_vals = [
+                    [float(x) for x in row] for row in e_parsed
                 ]
                 return all(
                     abs(r - e) < 1e-9
                     for r_row, e_row in zip(r_vals, e_vals)
                     for r, e in zip(r_row, e_row)
                 )
+
             # Handle simple list strings for vectors
-            if  (   result.startswith('[')
-                    and expected.startswith('[')
-                    and not result.startswith('[[')
-                ):
-                r_vals = [float(x) for x in ast.literal_eval(result)]
-                e_vals = [float(x) for x in ast.literal_eval(expected)]
-                return all(abs(r - e) < 1e-9 for r, e in zip(r_vals, e_vals))
-            try:
-                return abs(float(result) - float(expected)) < 1e-9
-            except ValueError:
-                return False
-        
+            r_vals = [float(x) for x in r_parsed]
+            e_vals = [float(x) for x in e_parsed]
+            return all(abs(r - e) < 1e-9 for r, e in zip(r_vals, e_vals))
+
         async def test():
             session = Session("test_calc_linear_numpy", portable=True)
             for expression, expected in LINEAR_ALGEBRA_TESTS:
@@ -378,6 +403,9 @@ class TestCalculate(unittest.TestCase):
                         f"Failed for {expression}: expected {e}, got {r}"
                     )
             session.delete()
+        set_numpy_mode(True)
+        asyncio.run(test())
+        set_numpy_mode(False)
         asyncio.run(test())
 
     def test_linear_algebra_precision_mode(self):
