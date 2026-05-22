@@ -5,7 +5,7 @@ Session class for Hola session management.
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
-from hola.ollama.types import Message as OMessage, Role
+from hola.types import Message as OMessage, Role
 from hola.session.exceptions import (
     SessionDeleteError,
     SessionError,

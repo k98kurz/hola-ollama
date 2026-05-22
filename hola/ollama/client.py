@@ -14,17 +14,21 @@ from hola.ollama.exceptions import (
     OllamaRequestError,
 )
 from hola.ollama.types import (
-    ChatRequest,
     ChatResponse,
     ChatResponseChunk,
     GenerateChunk,
-    GenerateRequest,
     GenerateResponse,
-    Message,
     ModelInfo,
     ModelMetadata,
-    Role,
     RunningModel,
+)
+from hola.types import (
+    ChatRequest,
+    GenerateRequest,
+    GenerationOptions,
+    LLMClient,
+    Message,
+    Role,
 )
 from hola.cache import AsyncLRUCache, model_info_cache
 from hola.tools.types import ToolCall, ToolCallFunction

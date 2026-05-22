@@ -5,14 +5,9 @@ Hola - An extensible harness for Ollama for local AI agent development.
 from hola.ollama import (
     OllamaClient,
     ModelWarmer,
-    Role,
-    Message,
-    GenerationOptions,
-    ChatRequest,
     ChatResponseChunk,
     ChatResponse,
     GenerateChunk,
-    GenerateRequest,
     GenerateResponse,
     ModelInfo,
     RunningModel,
@@ -22,6 +17,14 @@ from hola.ollama import (
     OllamaConnectionError,
     OllamaRequestError,
     OllamaModelError,
+)
+from hola.types import (
+    Role,
+    Message,
+    GenerationOptions,
+    ChatRequest,
+    GenerateRequest,
+    LLMClient,
 )
 from hola.tools import (
     tool,

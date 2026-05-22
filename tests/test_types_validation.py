@@ -3,14 +3,16 @@ Tests for type validation in dataclasses.
 """
 
 import unittest
-from hola.ollama.types import (
+from hola.types import (
     ChatRequest,
     GenerationOptions,
-    GenerateChunk,
     GenerateRequest,
-    GenerateResponse,
     Message,
     Role,
+)
+from hola.ollama.types import (
+    GenerateChunk,
+    GenerateResponse,
 )
 from hola.tools.types import (
     ToolCall,

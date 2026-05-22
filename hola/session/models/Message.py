@@ -1,6 +1,6 @@
 from enum import Enum
 from sqloquent import SqlModel, Default, RelatedModel
-from hola.ollama.types import Role
+from hola.types import Role
 import packify
 
 

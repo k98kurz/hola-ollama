@@ -14,17 +14,21 @@ from hola.ollama.config import (
     WarmerConfig,
 )
 from hola.ollama.types import (
-    ChatRequest,
     ChatResponse,
     ChatResponseChunk,
-    GenerationOptions,
     GenerateChunk,
-    GenerateRequest,
     GenerateResponse,
-    Message,
     ModelInfo,
-    Role,
+    ModelMetadata,
     RunningModel,
+)
+from hola.types import (
+    ChatRequest,
+    GenerateRequest,
+    GenerationOptions,
+    LLMClient,
+    Message,
+    Role,
 )
 from hola.tools import (
     ToolCall,

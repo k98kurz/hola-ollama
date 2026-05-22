@@ -22,7 +22,7 @@ from hola.session.exceptions import (
 )
 from hola.session.manager import _generate_session_id
 from hola.session.storage import initialize
-from hola.ollama.types import Message as OMessage, Role
+from hola.types import Message as OMessage, Role
 import os
 import shutil
 import time

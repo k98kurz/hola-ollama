@@ -5,7 +5,7 @@ Model warmer for keeping models loaded in memory.
 from typing import Self
 from hola.ollama.client import OllamaClient
 from hola.ollama.config import WarmerConfig
-from hola.ollama.types import ChatRequest, GenerationOptions, Message, Role
+from hola.types import ChatRequest, GenerationOptions, Message, Role
 import asyncio
 import logging
 import threading

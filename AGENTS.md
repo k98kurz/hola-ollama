@@ -22,6 +22,7 @@ pip install -e .          # Install package for most manual testing
   - Include only the most important information necessary to survive context compactions
   - Once something is done, REMOVE IT from todo.md; do NOT fill the file with
     self-congratulatory notes
+  - When continuing after a recent compaction, read todo.md to stay on task
 - If you encounter anything requiring a major change in plans, stop and discuss
 - Do not worry about backwards compatibility; this project is under development,
   incomplete, and has never been used anywhere.
