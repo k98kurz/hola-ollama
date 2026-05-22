@@ -104,9 +104,10 @@ Contributors maintain their copyright over such modifications and improvements,
 and all such accepted contributions will be acknowledged via a contributor
 credits section unless the contributor explicitly waives this right.
 
-5. Relicensing: This software may also be licensed under different license terms
-so long as all copyright holders and contributors, or their heirs or assigns,
-have been provided 90 days notice and do not object.
+5. Relicensing: The maintainer(s) of the original project code repository may
+relicense this software under different license terms so long as all copyright
+holders and contributors, or their heirs or assigns, have been provided 90 days
+notice and do not object.
 
 6. Disclaimer: This software is provided "as is". The copyright holders and
 contributors who license this software disclaim all warranties with regard to
