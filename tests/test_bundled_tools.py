@@ -7,25 +7,37 @@ import unittest
 import shutil
 from pathlib import Path
 from hola.session.session import Session
+from hola.session.storage import initialize
 from hola.tools.core import execute_tool_call, list_tools
 from hola.tools.types import ToolCall, ToolCallFunction
 from hola.permissions import Permission
 
 
-class TestMemorizeAndRecall(unittest.TestCase):
+class TestSessionBase(unittest.TestCase):
+    """Base class for bundled tool tests with proper session lifecycle."""
+    def setUp(self):
+        """Set up test fixtures."""
+        initialize(True)
+        session_id = self.__class__.__name__.lower()
+        self.session = Session(session_id, portable=True)
+        self.test_dir = Path.cwd() / ".hola"
+
+    def tearDown(self):
+        """Clean up after tests."""
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir)
+
+
+class TestMemorizeAndRecall(TestSessionBase):
     def test_memorize_and_recall_basic(self):
         async def test():
-            session = Session("test_basic", portable=False)
-            session.delete()
-
-            session = Session("test_basic", portable=False)
             call = ToolCall(
                 function=ToolCallFunction(
                     name="memorize",
                     arguments={"key": "test_key", "value": "test_value"},
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
 
             recall_call = ToolCall(
                 function=ToolCallFunction(
@@ -33,25 +45,20 @@ class TestMemorizeAndRecall(unittest.TestCase):
                     arguments={"key": "test_key"},
                 ),
             )
-            result = await execute_tool_call(recall_call, session)
+            result = await execute_tool_call(recall_call, self.session)
             self.assertEqual(result, "test_value")
-            session.delete()
 
         asyncio.run(test())
 
     def test_memorize_overwrite(self):
         async def test():
-            session = Session("test_overwrite", portable=False)
-            session.delete()
-
-            session = Session("test_overwrite", portable=False)
             call1 = ToolCall(
                 function=ToolCallFunction(
                     name="memorize",
                     arguments={"key": "test_key", "value": "old_value"},
                 ),
             )
-            await execute_tool_call(call1, session)
+            await execute_tool_call(call1, self.session)
 
             call2 = ToolCall(
                 function=ToolCallFunction(
@@ -59,7 +66,7 @@ class TestMemorizeAndRecall(unittest.TestCase):
                     arguments={"key": "test_key", "value": "new_value"},
                 ),
             )
-            await execute_tool_call(call2, session)
+            await execute_tool_call(call2, self.session)
 
             recall_call = ToolCall(
                 function=ToolCallFunction(
@@ -67,18 +74,13 @@ class TestMemorizeAndRecall(unittest.TestCase):
                     arguments={"key": "test_key"},
                 ),
             )
-            result = await execute_tool_call(recall_call, session)
+            result = await execute_tool_call(recall_call, self.session)
             self.assertEqual(result, "new_value")
-            session.delete()
 
         asyncio.run(test())
 
     def test_complex_data_structures(self):
         async def test():
-            session = Session("test_complex", portable=False)
-            session.delete()
-
-            session = Session("test_complex", portable=False)
             complex_data = {"nested": {"list": [1, 2, 3], "value": None}}
 
             call = ToolCall(
@@ -87,7 +89,7 @@ class TestMemorizeAndRecall(unittest.TestCase):
                     arguments={"key": "complex_key", "value": complex_data},
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
 
             recall_call = ToolCall(
                 function=ToolCallFunction(
@@ -95,9 +97,8 @@ class TestMemorizeAndRecall(unittest.TestCase):
                     arguments={"key": "complex_key"},
                 ),
             )
-            result = await execute_tool_call(recall_call, session)
+            result = await execute_tool_call(recall_call, self.session)
             self.assertEqual(result, complex_data)
-            session.delete()
 
         asyncio.run(test())
 
@@ -122,16 +123,12 @@ class TestMemorizeAndRecall(unittest.TestCase):
         self.assertNotIn("session", required)
 
 
-class TestGrep(unittest.TestCase):
+class TestGrep(TestSessionBase):
     def test_grep_single_file(self):
         async def test():
-            session = Session("test_grep_single", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_grep_single", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world\nhello there\ngoodbye world")
 
             call = ToolCall(
@@ -140,25 +137,20 @@ class TestGrep(unittest.TestCase):
                     arguments={"pattern": "hello", "path": "test.txt"},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertEqual(len(result), 2)
             self.assertIn("hello world", result[0])
             self.assertIn("hello there", result[1])
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_line_numbers(self):
         async def test():
-            session = Session("test_grep_line", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_grep_line", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("line one\nline two\nline three\nline four")
 
             call = ToolCall(
@@ -167,31 +159,26 @@ class TestGrep(unittest.TestCase):
                     arguments={"pattern": "line", "path": "test.txt", "n": True},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertEqual(len(result), 4)
             self.assertTrue(result[0].startswith("1:"))
             self.assertTrue(result[1].startswith("2:"))
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_recursive(self):
         async def test():
-            session = Session("test_grep_rec", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_grep_rec", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            testdir = Path(session.dbsession.cwd) / "testdir"
+            testdir = Path(self.session.dbsession.cwd) / "testdir"
             testdir.mkdir()
-            session.set_permission(str(testdir), Permission(7))
+            self.session.set_permission(str(testdir), Permission(7))
 
             subdir = testdir / "subdir"
             subdir.mkdir()
-            session.set_permission(str(subdir), Permission(7))
+            self.session.set_permission(str(subdir), Permission(7))
 
             test_file1 = testdir / "test1.txt"
             test_file1.write_text("hello world")
@@ -205,26 +192,21 @@ class TestGrep(unittest.TestCase):
                     arguments={"pattern": "hello", "path": "testdir", "r": True},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertEqual(len(result), 2)
 
             test_file1.unlink()
             test_file2.unlink()
             subdir.rmdir()
             testdir.rmdir()
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_context_after(self):
         async def test():
-            session = Session("test_grep_a", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_grep_a", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("line one\nline two\nline three\nline four\nline five")
 
             call = ToolCall(
@@ -233,24 +215,19 @@ class TestGrep(unittest.TestCase):
                     arguments={"pattern": "line two", "path": "test.txt", "A": 2},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertIn("line two", result[0])
             self.assertEqual(len(result), 3)
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_context_before(self):
         async def test():
-            session = Session("test_grep_b", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_grep_b", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("line one\nline two\nline three\nline four\nline five")
 
             call = ToolCall(
@@ -259,42 +236,29 @@ class TestGrep(unittest.TestCase):
                     arguments={"pattern": "line four", "path": "test.txt", "B": 2},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertIn("line four", result[-1])
             self.assertEqual(len(result), 3)
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_data_string(self):
         async def test():
-            session = Session("test_grep_data", portable=False)
-            session.delete()
-
-            session = Session("test_grep_data", portable=False)
-
             call = ToolCall(
                 function=ToolCallFunction(
                     name="grep",
                     arguments={"pattern": "hello", "data": "hello world\nhello there"},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertEqual(len(result), 2)
-
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_data_list(self):
         async def test():
-            session = Session("test_grep_list", portable=False)
-            session.delete()
-
-            session = Session("test_grep_list", portable=False)
-
             call = ToolCall(
                 function=ToolCallFunction(
                     name="grep",
@@ -304,20 +268,13 @@ class TestGrep(unittest.TestCase):
                     },
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertEqual(len(result), 2)
-
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_data_dict(self):
         async def test():
-            session = Session("test_grep_dict", portable=False)
-            session.delete()
-
-            session = Session("test_grep_dict", portable=False)
-
             call = ToolCall(
                 function=ToolCallFunction(
                     name="grep",
@@ -327,22 +284,16 @@ class TestGrep(unittest.TestCase):
                     },
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertEqual(len(result), 1)
-
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_pattern_not_found(self):
         async def test():
-            session = Session("test_grep_notfound", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_grep_notfound", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world")
 
             call = ToolCall(
@@ -351,26 +302,21 @@ class TestGrep(unittest.TestCase):
                     arguments={"pattern": "xyz", "path": "test.txt"},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertEqual(len(result), 0)
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_grep_permission_denied(self):
         async def test():
-            session = Session("test_grep_perm", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_grep_perm", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world")
 
-            session.set_permission(str(test_file), Permission(0))
+            self.session.set_permission(str(test_file), Permission(0))
 
             from hola.ollama.exceptions import ToolExecutionError
 
@@ -382,25 +328,20 @@ class TestGrep(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestRead(unittest.TestCase):
+class TestRead(TestSessionBase):
     def test_read_success(self):
         async def test():
-            session = Session("test_read", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_read", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("Hello, World!")
 
             call = ToolCall(
@@ -409,22 +350,17 @@ class TestRead(unittest.TestCase):
                     arguments={"path": "test.txt"},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertEqual(result, "Hello, World!")
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_read_failures(self):
         async def test():
-            session = Session("test_read_fail", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(4))
 
-            session = Session("test_read_fail", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(4))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
 
             from hola.ollama.exceptions import ToolExecutionError
@@ -437,10 +373,10 @@ class TestRead(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_not_found, session)
+                await execute_tool_call(call_not_found, self.session)
             self.assertIn("not found", str(cm.exception).lower())
 
-            session.set_permission(str(test_file), Permission(0))
+            self.session.set_permission(str(test_file), Permission(0))
 
             call_no_perm = ToolCall(
                 function=ToolCallFunction(
@@ -450,26 +386,21 @@ class TestRead(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_no_perm, session)
+                await execute_tool_call(call_no_perm, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestWrite(unittest.TestCase):
+class TestWrite(TestSessionBase):
     def test_write_success(self):
         async def test():
-            session = Session("test_write", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_write", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
-            test_dir = Path(session.dbsession.cwd) / "subdir" / "nested"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
+            test_dir = Path(self.session.dbsession.cwd) / "subdir" / "nested"
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -477,7 +408,7 @@ class TestWrite(unittest.TestCase):
                     arguments={"path": "test.txt", "content": "Hello, World!"},
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
             self.assertEqual(test_file.read_text(), "Hello, World!")
 
             call_nested = ToolCall(
@@ -489,7 +420,7 @@ class TestWrite(unittest.TestCase):
                     },
                 ),
             )
-            await execute_tool_call(call_nested, session)
+            await execute_tool_call(call_nested, self.session)
             self.assertTrue(test_dir.exists())
             self.assertEqual(
                 (test_dir / "test.txt").read_text(), "Nested content"
@@ -499,17 +430,11 @@ class TestWrite(unittest.TestCase):
             (test_dir / "test.txt").unlink()
             test_dir.rmdir()
             test_dir.parent.rmdir()
-            session.delete()
 
         asyncio.run(test())
 
     def test_write_failures(self):
         async def test():
-            session = Session("test_write_fail", portable=False)
-            session.delete()
-
-            session = Session("test_write_fail", portable=False)
-
             from hola.ollama.exceptions import ToolExecutionError
 
             call = ToolCall(
@@ -520,15 +445,15 @@ class TestWrite(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("existing")
 
-            session.set_permission(str(test_file), Permission(0))
+            self.session.set_permission(str(test_file), Permission(0))
 
             call_no_write = ToolCall(
                 function=ToolCallFunction(
@@ -538,27 +463,22 @@ class TestWrite(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_no_write, session)
+                await execute_tool_call(call_no_write, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_write_nested_permissions(self):
         async def test():
-            session = Session("test_write_nested", portable=False)
-            session.delete()
-
-            session = Session("test_write_nested", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
             from hola.ollama.exceptions import ToolExecutionError
 
-            dstdir = Path(session.dbsession.cwd) / "dstdir"
+            dstdir = Path(self.session.dbsession.cwd) / "dstdir"
             dstdir.mkdir(exist_ok=True)
-            session.set_permission(str(dstdir), Permission(0))
+            self.session.set_permission(str(dstdir), Permission(0))
 
             call_denied = ToolCall(
                 function=ToolCallFunction(
@@ -571,31 +491,26 @@ class TestWrite(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_denied, session)
+                await execute_tool_call(call_denied, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            session.set_permission(str(dstdir), Permission(7))
+            self.session.set_permission(str(dstdir), Permission(7))
 
-            await execute_tool_call(call_denied, session)
+            await execute_tool_call(call_denied, self.session)
             self.assertTrue((dstdir / "subdir" / "file.txt").exists())
 
             shutil.rmtree(dstdir)
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestRm(unittest.TestCase):
+class TestRm(TestSessionBase):
     def test_rm_success(self):
         async def test():
-            session = Session("test_rm", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_rm", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
             (test_dir / "file.txt").write_text("content")
             test_file.write_text("content")
@@ -606,7 +521,7 @@ class TestRm(unittest.TestCase):
                     arguments={"path": "test.txt"},
                 ),
             )
-            await execute_tool_call(call_file, session)
+            await execute_tool_call(call_file, self.session)
             self.assertFalse(test_file.exists())
 
             call_dir = ToolCall(
@@ -615,21 +530,14 @@ class TestRm(unittest.TestCase):
                     arguments={"path": "testdir", "r": True},
                 ),
             )
-            await execute_tool_call(call_dir, session)
+            await execute_tool_call(call_dir, self.session)
             self.assertFalse(test_dir.exists())
-
-            session.delete()
 
         asyncio.run(test())
 
     def test_rm_failures(self):
         async def test():
-            session = Session("test_rm_fail", portable=False)
-            session.delete()
-
-            session = Session("test_rm_fail", portable=False)
-
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
             (test_dir / "file.txt").write_text("content")
 
@@ -643,12 +551,12 @@ class TestRm(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            session.set_permission(str(test_dir), Permission(7))
+            self.session.set_permission(str(test_dir), Permission(7))
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("not empty", str(cm.exception).lower())
 
             call_not_found = ToolCall(
@@ -659,26 +567,21 @@ class TestRm(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_not_found, session)
+                await execute_tool_call(call_not_found, self.session)
             self.assertIn("not found", str(cm.exception).lower())
 
             shutil.rmtree(test_dir)
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestMv(unittest.TestCase):
+class TestMv(TestSessionBase):
     def test_mv_success(self):
         async def test():
-            session = Session("test_mv", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_mv", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
 
             test_file.write_text("content")
@@ -689,7 +592,7 @@ class TestMv(unittest.TestCase):
                     arguments={"src": "test.txt", "dst": "testdir/test.txt"},
                 ),
             )
-            await execute_tool_call(call_move, session)
+            await execute_tool_call(call_move, self.session)
             self.assertFalse(test_file.exists())
             self.assertTrue((test_dir / "test.txt").exists())
 
@@ -702,23 +605,17 @@ class TestMv(unittest.TestCase):
                     },
                 ),
             )
-            await execute_tool_call(call_rename, session)
+            await execute_tool_call(call_rename, self.session)
             self.assertFalse((test_dir / "test.txt").exists())
             self.assertTrue((test_dir / "renamed.txt").exists())
 
             (test_dir / "renamed.txt").unlink()
             test_dir.rmdir()
-            session.delete()
 
         asyncio.run(test())
 
     def test_mv_failures(self):
         async def test():
-            session = Session("test_mv_fail", portable=False)
-            session.delete()
-
-            session = Session("test_mv_fail", portable=False)
-
             from hola.ollama.exceptions import ToolExecutionError
 
             call = ToolCall(
@@ -729,17 +626,17 @@ class TestMv(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
 
-            dstdir = Path(session.dbsession.cwd) / "dstdir"
+            dstdir = Path(self.session.dbsession.cwd) / "dstdir"
             dstdir.mkdir(exist_ok=True)
-            session.set_permission(str(dstdir), Permission(0))
+            self.session.set_permission(str(dstdir), Permission(0))
 
             call_dst_denied = ToolCall(
                 function=ToolCallFunction(
@@ -749,7 +646,7 @@ class TestMv(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_dst_denied, session)
+                await execute_tool_call(call_dst_denied, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
             call_not_found = ToolCall(
@@ -760,30 +657,25 @@ class TestMv(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_not_found, session)
+                await execute_tool_call(call_not_found, self.session)
             self.assertIn("not found", str(cm.exception).lower())
 
             test_file.unlink()
             shutil.rmtree(dstdir)
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestCp(unittest.TestCase):
+class TestCp(TestSessionBase):
     def test_cp_success(self):
         async def test():
-            session = Session("test_cp", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_cp", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
-            test_dir = Path(session.dbsession.cwd) / "srcdir"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
+            test_dir = Path(self.session.dbsession.cwd) / "srcdir"
             test_dir.mkdir(exist_ok=True)
             (test_dir / "file.txt").write_text("content")
-            dstdir = Path(session.dbsession.cwd) / "dstdir"
+            dstdir = Path(self.session.dbsession.cwd) / "dstdir"
             dstdir.mkdir(exist_ok=True)
 
             call_file = ToolCall(
@@ -794,9 +686,9 @@ class TestCp(unittest.TestCase):
             )
 
             test_file.write_text("original")
-            await execute_tool_call(call_file, session)
+            await execute_tool_call(call_file, self.session)
             self.assertTrue(test_file.exists())
-            self.assertTrue((Path(session.dbsession.cwd) / "new.txt").exists())
+            self.assertTrue((Path(self.session.dbsession.cwd) / "new.txt").exists())
             self.assertEqual(test_file.read_text(), "original")
 
             dst_copy_dir = dstdir / "srcdir"
@@ -809,26 +701,21 @@ class TestCp(unittest.TestCase):
                     arguments={"src": "srcdir", "dst": "dstdir/srcdir", "r": True},
                 ),
             )
-            await execute_tool_call(call_dir, session)
+            await execute_tool_call(call_dir, self.session)
             self.assertTrue((dstdir / "srcdir" / "file.txt").exists())
 
             test_file.unlink()
-            (Path(session.dbsession.cwd) / "new.txt").unlink()
+            (Path(self.session.dbsession.cwd) / "new.txt").unlink()
             shutil.rmtree(dstdir)
             shutil.rmtree(test_dir)
-            session.delete()
 
         asyncio.run(test())
 
     def test_cp_failures(self):
         async def test():
-            session = Session("test_cp_fail", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_cp_fail", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
             (test_dir / "file.txt").write_text("content")
 
@@ -842,10 +729,10 @@ class TestCp(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("requires -r", str(cm.exception).lower())
 
-            session.set_permission(str(test_dir), Permission(0))
+            self.session.set_permission(str(test_dir), Permission(0))
 
             call_src_denied = ToolCall(
                 function=ToolCallFunction(
@@ -855,14 +742,14 @@ class TestCp(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_src_denied, session)
+                await execute_tool_call(call_src_denied, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            session.set_permission(str(test_dir), Permission(7))
+            self.session.set_permission(str(test_dir), Permission(7))
 
-            dstdir = Path(session.dbsession.cwd) / "dstdir"
+            dstdir = Path(self.session.dbsession.cwd) / "dstdir"
             dstdir.mkdir(exist_ok=True)
-            session.set_permission(str(dstdir), Permission(0))
+            self.session.set_permission(str(dstdir), Permission(0))
 
             call_dst_denied = ToolCall(
                 function=ToolCallFunction(
@@ -872,7 +759,7 @@ class TestCp(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_dst_denied, session)
+                await execute_tool_call(call_dst_denied, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
             call_not_found = ToolCall(
@@ -883,29 +770,24 @@ class TestCp(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_not_found, session)
+                await execute_tool_call(call_not_found, self.session)
             self.assertIn("not found", str(cm.exception).lower())
 
             shutil.rmtree(test_dir)
             shutil.rmtree(dstdir)
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestLs(unittest.TestCase):
+class TestLs(TestSessionBase):
     def test_ls_basic(self):
         async def test():
-            session = Session("test_ls", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_ls", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
-            hidden_file = Path(session.dbsession.cwd) / ".hidden"
+            hidden_file = Path(self.session.dbsession.cwd) / ".hidden"
 
             test_file.write_text("content")
             hidden_file.write_text("hidden")
@@ -916,7 +798,7 @@ class TestLs(unittest.TestCase):
                     arguments={"path": "."},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertIn("test.txt", result)
             self.assertIn("testdir", result)
             self.assertNotIn(".hidden", result)
@@ -924,19 +806,14 @@ class TestLs(unittest.TestCase):
             test_file.unlink()
             hidden_file.unlink()
             test_dir.rmdir()
-            session.delete()
 
         asyncio.run(test())
 
     def test_ls_flags(self):
         async def test():
-            session = Session("test_ls_flags", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_ls_flags", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
 
             call_l = ToolCall(
@@ -945,7 +822,7 @@ class TestLs(unittest.TestCase):
                     arguments={"path": ".", "l": True},
                 ),
             )
-            result = await execute_tool_call(call_l, session)
+            result = await execute_tool_call(call_l, self.session)
             self.assertTrue(any("-rw" in line for line in result))
             self.assertTrue(any("test.txt" in line for line in result))
 
@@ -955,23 +832,18 @@ class TestLs(unittest.TestCase):
                     arguments={"path": ".", "a": True},
                 ),
             )
-            result = await execute_tool_call(call_a, session)
+            result = await execute_tool_call(call_a, self.session)
             self.assertTrue(any("test.txt" in line for line in result))
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_ls_recursive(self):
         async def test():
-            session = Session("test_ls_recursive", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_ls_recursive", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            nested_dir = Path(session.dbsession.cwd) / "dir1" / "dir2"
+            nested_dir = Path(self.session.dbsession.cwd) / "dir1" / "dir2"
             nested_dir.mkdir(parents=True)
             (nested_dir / "file.txt").write_text("content")
 
@@ -981,26 +853,20 @@ class TestLs(unittest.TestCase):
                     arguments={"path": ".", "R": True},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertIn("dir1:", result)
             self.assertIn("dir1/dir2:", result)
             self.assertIn("file.txt", result)
 
-            shutil.rmtree(Path(session.dbsession.cwd) / "dir1")
-            session.delete()
+            shutil.rmtree(Path(self.session.dbsession.cwd) / "dir1")
 
         asyncio.run(test())
 
     def test_ls_permissions(self):
         async def test():
-            session = Session("test_ls_perm", portable=False)
-            session.delete()
-
-            session = Session("test_ls_perm", portable=False)
-
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
-            session.set_permission(str(test_dir), Permission(0))
+            self.session.set_permission(str(test_dir), Permission(0))
 
             from hola.ollama.exceptions import ToolExecutionError
 
@@ -1012,25 +878,20 @@ class TestLs(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
             test_dir.rmdir()
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestEdit(unittest.TestCase):
+class TestEdit(TestSessionBase):
     def test_edit_first_occurrence(self):
         async def test():
-            session = Session("test_edit_first", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_edit_first", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world hello world")
 
             call = ToolCall(
@@ -1043,23 +904,18 @@ class TestEdit(unittest.TestCase):
                     },
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
             self.assertEqual(test_file.read_text(), "hi world hello world")
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_edit_all_occurrences(self):
         async def test():
-            session = Session("test_edit_all", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_edit_all", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world hello world")
 
             call = ToolCall(
@@ -1073,23 +929,18 @@ class TestEdit(unittest.TestCase):
                     },
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
             self.assertEqual(test_file.read_text(), "hi world hi world")
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_edit_skip_occurrences(self):
         async def test():
-            session = Session("test_edit_skip", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_edit_skip", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world hello world hello")
 
             call = ToolCall(
@@ -1103,23 +954,18 @@ class TestEdit(unittest.TestCase):
                     },
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
             self.assertEqual(test_file.read_text(), "hello world hi world hello")
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_edit_specific_count(self):
         async def test():
-            session = Session("test_edit_count", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_edit_count", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello hello hello hello")
 
             call = ToolCall(
@@ -1133,23 +979,18 @@ class TestEdit(unittest.TestCase):
                     },
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
             self.assertEqual(test_file.read_text(), "hi hi hello hello")
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_edit_failures(self):
         async def test():
-            session = Session("test_edit_fail", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_edit_fail", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
 
             from hola.ollama.exceptions import ToolExecutionError
@@ -1166,10 +1007,10 @@ class TestEdit(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_not_found, session)
+                await execute_tool_call(call_not_found, self.session)
             self.assertIn("not found", str(cm.exception).lower())
 
-            session.set_permission(str(test_file), Permission(0))
+            self.session.set_permission(str(test_file), Permission(0))
             call_no_write = ToolCall(
                 function=ToolCallFunction(
                     name="edit",
@@ -1182,10 +1023,10 @@ class TestEdit(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_no_write, session)
+                await execute_tool_call(call_no_write, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            session.set_permission(str(test_file), Permission(2))
+            self.session.set_permission(str(test_file), Permission(2))
             call_no_read = ToolCall(
                 function=ToolCallFunction(
                     name="edit",
@@ -1198,25 +1039,20 @@ class TestEdit(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_no_read, session)
+                await execute_tool_call(call_no_read, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestAppend(unittest.TestCase):
+class TestAppend(TestSessionBase):
     def test_append_existing(self):
         async def test():
-            session = Session("test_append_existing", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_append_existing", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello ")
 
             call = ToolCall(
@@ -1228,23 +1064,18 @@ class TestAppend(unittest.TestCase):
                     },
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
             self.assertEqual(test_file.read_text(), "hello world")
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_append_new_file(self):
         async def test():
-            session = Session("test_append_new", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_append_new", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -1255,28 +1086,23 @@ class TestAppend(unittest.TestCase):
                     },
                 ),
             )
-            await execute_tool_call(call, session)
+            await execute_tool_call(call, self.session)
             self.assertEqual(test_file.read_text(), "hello world")
 
             test_file.unlink()
-            session.delete()
 
         asyncio.run(test())
 
     def test_append_failures(self):
         async def test():
-            session = Session("test_append_fail", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_append_fail", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_file = Path(session.dbsession.cwd) / "test.txt"
+            test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
 
             from hola.ollama.exceptions import ToolExecutionError
 
-            session.set_permission(str(test_file), Permission(0))
+            self.session.set_permission(str(test_file), Permission(0))
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -1289,14 +1115,14 @@ class TestAppend(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            session.set_permission(str(test_file), Permission(7))
+            self.session.set_permission(str(test_file), Permission(7))
 
-            subdir = Path(session.dbsession.cwd) / "subdir"
+            subdir = Path(self.session.dbsession.cwd) / "subdir"
             subdir.mkdir()
-            session.set_permission(str(subdir), Permission(0))
+            self.session.set_permission(str(subdir), Permission(0))
 
             call_denied = ToolCall(
                 function=ToolCallFunction(
@@ -1309,26 +1135,21 @@ class TestAppend(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call_denied, session)
+                await execute_tool_call(call_denied, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
             test_file.unlink()
             shutil.rmtree(subdir)
-            session.delete()
 
         asyncio.run(test())
 
 
-class TestFind(unittest.TestCase):
+class TestFind(TestSessionBase):
     def test_find_all(self):
         async def test():
-            session = Session("test_find_all", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_find_all", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
             (test_dir / "file1.txt").write_text("content")
             (test_dir / "file2.txt").write_text("content")
@@ -1339,24 +1160,19 @@ class TestFind(unittest.TestCase):
                     arguments={"path": "testdir"},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertIn("file1.txt", result)
             self.assertIn("file2.txt", result)
 
             shutil.rmtree(test_dir)
-            session.delete()
 
         asyncio.run(test())
 
     def test_find_name_pattern(self):
         async def test():
-            session = Session("test_find_name", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_find_name", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
             (test_dir / "file1.txt").write_text("content")
             (test_dir / "file2.md").write_text("content")
@@ -1371,25 +1187,20 @@ class TestFind(unittest.TestCase):
                     },
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertIn("file1.txt", result)
             self.assertIn("file3.txt", result)
             self.assertNotIn("file2.md", result)
 
             shutil.rmtree(test_dir)
-            session.delete()
 
         asyncio.run(test())
 
     def test_find_type_filter(self):
         async def test():
-            session = Session("test_find_type", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_find_type", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
             (test_dir / "file.txt").write_text("content")
             (test_dir / "subdir").mkdir()
@@ -1403,7 +1214,7 @@ class TestFind(unittest.TestCase):
                     },
                 ),
             )
-            result = await execute_tool_call(call_files, session)
+            result = await execute_tool_call(call_files, self.session)
             self.assertIn("file.txt", result)
             self.assertNotIn("subdir", result)
 
@@ -1416,24 +1227,19 @@ class TestFind(unittest.TestCase):
                     },
                 ),
             )
-            result = await execute_tool_call(call_dirs, session)
+            result = await execute_tool_call(call_dirs, self.session)
             self.assertIn("subdir", result)
             self.assertNotIn("file.txt", result)
 
             shutil.rmtree(test_dir)
-            session.delete()
 
         asyncio.run(test())
 
     def test_find_depth_filter(self):
         async def test():
-            session = Session("test_find_depth", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_find_depth", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
             (test_dir / "file1.txt").write_text("content")
             (test_dir / "subdir").mkdir()
@@ -1448,7 +1254,7 @@ class TestFind(unittest.TestCase):
                     },
                 ),
             )
-            result = await execute_tool_call(call_mindepth, session)
+            result = await execute_tool_call(call_mindepth, self.session)
             self.assertIn("file1.txt", result)
             self.assertIn("subdir", result)
             self.assertIn("subdir/file2.txt", result)
@@ -1462,31 +1268,26 @@ class TestFind(unittest.TestCase):
                     },
                 ),
             )
-            result = await execute_tool_call(call_maxdepth, session)
+            result = await execute_tool_call(call_maxdepth, self.session)
             self.assertIn("file1.txt", result)
             self.assertIn("subdir", result)
             self.assertNotIn("subdir/file2.txt", result)
 
             shutil.rmtree(test_dir)
-            session.delete()
 
         asyncio.run(test())
 
     def test_find_permissions(self):
         async def test():
-            session = Session("test_find_perms", portable=False)
-            session.delete()
+            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
 
-            session = Session("test_find_perms", portable=False)
-            session.set_permission(str(session.dbsession.cwd), Permission(7))
-
-            test_dir = Path(session.dbsession.cwd) / "testdir"
+            test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
             (test_dir / "file.txt").write_text("content")
 
             from hola.ollama.exceptions import ToolExecutionError
 
-            session.set_permission(str(test_dir), Permission(0))
+            self.session.set_permission(str(test_dir), Permission(0))
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -1496,15 +1297,15 @@ class TestFind(unittest.TestCase):
             )
 
             with self.assertRaises(ToolExecutionError) as cm:
-                await execute_tool_call(call, session)
+                await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            session.set_permission(str(test_dir), Permission(7))
+            self.session.set_permission(str(test_dir), Permission(7))
 
             subdir = test_dir / "subdir"
             subdir.mkdir()
             (subdir / "file.txt").write_text("content")
-            session.set_permission(str(subdir), Permission(0))
+            self.session.set_permission(str(subdir), Permission(0))
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -1512,13 +1313,12 @@ class TestFind(unittest.TestCase):
                     arguments={"path": "testdir"},
                 ),
             )
-            result = await execute_tool_call(call, session)
+            result = await execute_tool_call(call, self.session)
             self.assertIn("file.txt", result)
             self.assertNotIn("subdir", result)
             self.assertNotIn("subdir/file.txt", result)
 
             shutil.rmtree(test_dir)
-            session.delete()
 
         asyncio.run(test())
 

@@ -37,6 +37,10 @@ with deterministic execution guarantees and reasonable security measures.
 - [ ] Plugin system for tools
 - [ ] Skill system supporting skill installation in hola-specific locations as well
   as .agents/, .claude/, .opencode/, .cursor/ within the CWD
+- [ ] CLI tool for launching a session with a specified workflow/agent
+- [ ] Optional long-term, inter-session memory systems (e.g. soul.md)
+- [ ] Optional daemon with scheduled workflows/agents
+- [ ] Optional TUI
 
 ## Testing
 
