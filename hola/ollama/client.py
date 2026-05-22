@@ -22,9 +22,11 @@ from hola.ollama.types import (
     GenerateResponse,
     Message,
     ModelInfo,
+    ModelMetadata,
     Role,
     RunningModel,
 )
+from hola.cache import AsyncLRUCache, model_info_cache
 from hola.tools.types import ToolCall, ToolCallFunction
 import json
 import logging
@@ -53,6 +55,7 @@ class OllamaClient:
             base_url: str = "http://localhost:11434",
             timeout: float = 120.0,
             config: ClientConfig | None = None,
+            cache: AsyncLRUCache | None = None,
         ) -> None:
         """Initialize client with httpx.AsyncClient."""
         if config is None:
@@ -63,6 +66,7 @@ class OllamaClient:
             base_url=config.base_url,
             timeout=httpx.Timeout(config.timeout),
         )
+        self._model_info_cache = cache if cache is not None else model_info_cache
 
     async def chat(
             self,
@@ -676,6 +680,97 @@ class OllamaClient:
                 )
                 raise OllamaClientError(
                     f"Failed to list running models: {e}"
+                ) from e
+
+    async def get_model_info(
+            self,
+            model: str,
+        ) -> ModelMetadata:
+        """Get metadata about a specific model with caching."""
+        cached = await self._model_info_cache.get(model)
+        if cached is not None:
+            return cached
+
+        for attempt in range(self._config.max_retries):
+            try:
+                response = await self._client.post(
+                    "/api/show",
+                    json={"name": model},
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                model_info = data.get("model_info", {})
+                details = data.get("details", {})
+
+                context_length = None
+                for key, value in model_info.items():
+                    if key.endswith(".context_length"):
+                        context_length = value
+                        break
+
+                if context_length is None:
+                    raise OllamaModelError(
+                        f"Could not determine context length for model: {model}"
+                    )
+
+                metadata = ModelMetadata(
+                    model_name=model,
+                    architecture=model_info.get("general.architecture", "unknown"),
+                    context_length=context_length,
+                    parameter_count=model_info.get("general.parameter_count"),
+                    quantization_level=details.get("quantization_level"),
+                    family=details.get("family"),
+                )
+
+                await self._model_info_cache.set(model, metadata)
+                return metadata
+
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                if attempt == self._config.max_retries - 1:
+                    logger.error(
+                        "Failed to get model info after %d attempts for model %s",
+                        self._config.max_retries,
+                        model,
+                    )
+                    raise OllamaConnectionError(
+                        f"Failed to connect to Ollama after "
+                        f"{self._config.max_retries} attempts"
+                    ) from e
+
+                delay = self._config.retry_delay * (2 ** attempt)
+                logger.debug(
+                    "Connection error, retrying in %.1fs (attempt %d/%d): %s",
+                    delay,
+                    attempt + 1,
+                    self._config.max_retries,
+                    e,
+                )
+                await asyncio.sleep(delay)
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    logger.error("Model not found: %s", model)
+                    raise OllamaModelError(f"Model not found: {model}") from e
+
+                logger.error(
+                    "Failed to get model info for %s: HTTP error %s: %s",
+                    model,
+                    e.response.status_code,
+                    e,
+                )
+                raise OllamaRequestError(
+                    f"Failed to get model info: HTTP error {e.response.status_code}"
+                ) from e
+
+            except httpx.HTTPError as e:
+                logger.error(
+                    "Failed to get model info for %s: %s",
+                    model,
+                    e,
+                )
+                raise OllamaClientError(
+                    f"Failed to get model info: {e}"
                 ) from e
 
     async def close(self) -> None:

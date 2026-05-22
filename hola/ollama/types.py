@@ -90,6 +90,16 @@ class RunningModel:
 
 
 @validated_dataclass
+class ModelMetadata:
+    model_name: str
+    architecture: str
+    context_length: int
+    parameter_count: int | None = None
+    quantization_level: str | None = None
+    family: str | None = None
+
+
+@validated_dataclass
 class GenerateRequest:
     model: str
     prompt: str
@@ -164,6 +174,10 @@ class LLMClient(Protocol):
 
     async def list_running_models(self) -> list[RunningModel]:
         """List currently loaded/running models."""
+        ...
+
+    async def get_model_info(self, model: str) -> ModelMetadata:
+        """Get metadata about a specific model."""
         ...
 
     async def close(self) -> None:

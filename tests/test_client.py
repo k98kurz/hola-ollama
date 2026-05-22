@@ -24,9 +24,12 @@ from hola.ollama.types import (
     LLMClient,
     Message,
     ModelInfo,
+    ModelMetadata,
     Role,
     RunningModel,
 )
+
+from hola.cache import AsyncLRUCache, model_info_cache
 
 
 class TestClient(unittest.IsolatedAsyncioTestCase):
@@ -38,6 +41,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         """Clean up after tests."""
         await self.client.close()
+        await model_info_cache.clear()
 
     async def test_client_initialization(self):
         """Test client initialization with defaults."""
@@ -396,6 +400,59 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(OllamaModelError):
             await self.client.load_model("nonexistent")
+
+    async def test_get_model_info_caching(self):
+        """Test model info retrieval with caching."""
+        info1 = await self.client.get_model_info("qwen3:0.6b")
+        assert info1.context_length > 0, info1.context_length
+        assert info1.architecture == "qwen3", info1.architecture
+        assert info1.model_name == "qwen3:0.6b", info1.model_name
+
+        info2 = await self.client.get_model_info("qwen3:0.6b")
+        assert info1 == info2, (info1, info2)
+
+    async def test_get_model_info_cache_clear(self):
+        """Test cache clearing functionality across client instances."""
+        client1 = OllamaClient()
+        await client1.get_model_info("qwen3:0.6b")
+        await client1.close()
+
+        await model_info_cache.clear()
+
+        client2 = OllamaClient()
+        info = await client2.get_model_info("qwen3:0.6b")
+        assert info.context_length > 0, info.context_length
+        await client2.close()
+
+    async def test_get_model_info_shared_cache(self):
+        """Test that cache is shared between client instances."""
+        client1 = OllamaClient()
+        info1 = await client1.get_model_info("qwen3:0.6b")
+        await client1.close()
+
+        client2 = OllamaClient()
+        info2 = await client2.get_model_info("qwen3:0.6b")
+        await client2.close()
+
+        assert info1 == info2, (info1, info2)
+        assert len(model_info_cache._cache) > 0
+
+    async def test_get_model_info_cache_override(self):
+        """Test that custom cache instance is isolated."""
+        custom_cache = AsyncLRUCache(maxsize=5)
+        client = OllamaClient(cache=custom_cache)
+
+        await client.get_model_info("qwen3:0.6b")
+
+        assert len(custom_cache._cache) == 1
+        assert len(model_info_cache._cache) == 0
+
+        await client.close()
+
+    async def test_get_model_info_error(self):
+        """Test error handling for nonexistent model."""
+        with self.assertRaises(OllamaModelError):
+            await self.client.get_model_info("nonexistent-model-xyz123")
 
     async def test_context_manager(self):
         """Test async context manager."""
