@@ -10,7 +10,7 @@ from hola.types import (
     Message,
     Role,
 )
-from hola.ollama.types import (
+from hola.types import (
     GenerateChunk,
     GenerateResponse,
 )

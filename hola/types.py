@@ -5,20 +5,9 @@ Core types for LLM client interactions.
 from __future__ import annotations
 from collections.abc import AsyncGenerator
 from enum import Enum
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from hola.errors import validated_dataclass
 from hola.tools.types import ToolCall, ToolDefinition
-
-if TYPE_CHECKING:
-    from hola.ollama.types import (
-        ChatResponse,
-        ChatResponseChunk,
-        GenerateChunk,
-        GenerateResponse,
-        ModelInfo,
-        ModelMetadata,
-        RunningModel,
-    )
 
 
 class Role(Enum):
@@ -35,6 +24,78 @@ class Message:
     content: str
     tool_calls: list[ToolCall] | None = None
     tool_name: str | None = None
+
+
+@validated_dataclass
+class ChatResponseChunk:
+    model: str
+    message: Message
+    done: bool
+    done_reason: str | None = None
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_eval_count: int | None = None
+    prompt_eval_duration: int | None = None
+    eval_count: int | None = None
+    eval_duration: int | None = None
+
+
+@validated_dataclass
+class ChatResponse:
+    model: str
+    message: Message
+    done: bool
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_eval_count: int | None = None
+    prompt_eval_duration: int | None = None
+    eval_count: int | None = None
+    eval_duration: int | None = None
+
+
+@validated_dataclass
+class ModelInfo:
+    name: str
+    modified_at: str
+    size: int
+    digest: str
+
+
+@validated_dataclass
+class ModelMetadata:
+    model_name: str
+    context_length: int
+    architecture: str | None = None
+    parameter_count: int | None = None
+    quantization_level: str | None = None
+    family: str | None = None
+
+
+@validated_dataclass
+class GenerateChunk:
+    model: str
+    response: str
+    done: bool
+    done_reason: str | None = None
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_eval_count: int | None = None
+    prompt_eval_duration: int | None = None
+    eval_count: int | None = None
+    eval_duration: int | None = None
+
+
+@validated_dataclass
+class GenerateResponse:
+    model: str
+    response: str
+    done: bool
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_eval_count: int | None = None
+    prompt_eval_duration: int | None = None
+    eval_count: int | None = None
+    eval_duration: int | None = None
 
 
 @validated_dataclass
@@ -90,20 +151,8 @@ class LLMClient(Protocol):
         """Non-streaming text generation from the model."""
         ...
 
-    async def load_model(self, model: str, keep_alive: str = "24h") -> None:
-        """Explicitly load a model into memory."""
-        ...
-
-    async def unload_model(self, model: str) -> None:
-        """Explicitly unload a model from memory."""
-        ...
-
     async def list_models(self) -> list[ModelInfo]:
         """List all available models."""
-        ...
-
-    async def list_running_models(self) -> list[RunningModel]:
-        """List currently loaded/running models."""
         ...
 
     async def get_model_info(self, model: str) -> ModelMetadata:
