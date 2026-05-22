@@ -34,10 +34,10 @@ class ChatResponseChunk:
     done_reason: str | None = None
     total_duration: int | None = None
     load_duration: int | None = None
-    prompt_eval_count: int | None = None
-    prompt_eval_duration: int | None = None
-    eval_count: int | None = None
-    eval_duration: int | None = None
+    prompt_tokens: int | None = None
+    prompt_duration: int | None = None
+    output_tokens: int | None = None
+    output_duration: int | None = None
 
 
 @validated_dataclass
@@ -47,10 +47,10 @@ class ChatResponse:
     done: bool
     total_duration: int | None = None
     load_duration: int | None = None
-    prompt_eval_count: int | None = None
-    prompt_eval_duration: int | None = None
-    eval_count: int | None = None
-    eval_duration: int | None = None
+    prompt_tokens: int | None = None
+    prompt_duration: int | None = None
+    output_tokens: int | None = None
+    output_duration: int | None = None
 
 
 @validated_dataclass
@@ -79,10 +79,10 @@ class GenerateChunk:
     done_reason: str | None = None
     total_duration: int | None = None
     load_duration: int | None = None
-    prompt_eval_count: int | None = None
-    prompt_eval_duration: int | None = None
-    eval_count: int | None = None
-    eval_duration: int | None = None
+    prompt_tokens: int | None = None
+    prompt_duration: int | None = None
+    output_tokens: int | None = None
+    output_duration: int | None = None
 
 
 @validated_dataclass
@@ -92,10 +92,10 @@ class GenerateResponse:
     done: bool
     total_duration: int | None = None
     load_duration: int | None = None
-    prompt_eval_count: int | None = None
-    prompt_eval_duration: int | None = None
-    eval_count: int | None = None
-    eval_duration: int | None = None
+    prompt_tokens: int | None = None
+    prompt_duration: int | None = None
+    output_tokens: int | None = None
+    output_duration: int | None = None
 
 
 @validated_dataclass

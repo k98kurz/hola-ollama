@@ -38,17 +38,6 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class _ChatResponseStats:
-    """Statistics from final chat response chunk."""
-    total_duration: int | None = None
-    load_duration: int | None = None
-    prompt_eval_count: int | None = None
-    prompt_eval_duration: int | None = None
-    eval_count: int | None = None
-    eval_duration: int | None = None
-
-
 class OllamaClient:
     """HTTP client for Ollama API interactions."""
 
@@ -206,10 +195,10 @@ class OllamaClient:
                     done=data["done"],
                     total_duration=data.get("total_duration"),
                     load_duration=data.get("load_duration"),
-                    prompt_eval_count=data.get("prompt_eval_count"),
-                    prompt_eval_duration=data.get("prompt_eval_duration"),
-                    eval_count=data.get("eval_count"),
-                    eval_duration=data.get("eval_duration"),
+                    prompt_tokens=data.get("prompt_eval_count"),
+                    prompt_duration=data.get("prompt_eval_duration"),
+                    output_tokens=data.get("eval_count"),
+                    output_duration=data.get("eval_duration"),
                 )
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
@@ -382,10 +371,10 @@ class OllamaClient:
                     done=data["done"],
                     total_duration=data.get("total_duration"),
                     load_duration=data.get("load_duration"),
-                    prompt_eval_count=data.get("prompt_eval_count"),
-                    prompt_eval_duration=data.get("prompt_eval_duration"),
-                    eval_count=data.get("eval_count"),
-                    eval_duration=data.get("eval_duration"),
+                    prompt_tokens=data.get("prompt_eval_count"),
+                    prompt_duration=data.get("prompt_eval_duration"),
+                    output_tokens=data.get("eval_count"),
+                    output_duration=data.get("eval_duration"),
                 )
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
@@ -930,10 +919,10 @@ class OllamaClient:
             done_reason=data.get("done_reason"),
             total_duration=data.get("total_duration"),
             load_duration=data.get("load_duration"),
-            prompt_eval_count=data.get("prompt_eval_count"),
-            prompt_eval_duration=data.get("prompt_eval_duration"),
-            eval_count=data.get("eval_count"),
-            eval_duration=data.get("eval_duration"),
+            prompt_tokens=data.get("prompt_eval_count"),
+            prompt_duration=data.get("prompt_eval_duration"),
+            output_tokens=data.get("eval_count"),
+            output_duration=data.get("eval_duration"),
         )
 
     def _parse_tool_calls(
@@ -1011,8 +1000,8 @@ class OllamaClient:
             done_reason=data.get("done_reason"),
             total_duration=data.get("total_duration"),
             load_duration=data.get("load_duration"),
-            prompt_eval_count=data.get("prompt_eval_count"),
-            prompt_eval_duration=data.get("prompt_eval_duration"),
-            eval_count=data.get("eval_count"),
-            eval_duration=data.get("eval_duration"),
+            prompt_tokens=data.get("prompt_eval_count"),
+            prompt_duration=data.get("prompt_eval_duration"),
+            output_tokens=data.get("eval_count"),
+            output_duration=data.get("eval_duration"),
         )
