@@ -23,3 +23,4 @@ from hola.tools.compat import (
 from hola.tools.bundled import *  # Registers all bundled tools
 from hola.tools.python import python  # Registers python tool
 from hola.tools.calculate import calculate  # Registers calculate tool
+from hola.tools import orchestration  # Registers orchestration tools

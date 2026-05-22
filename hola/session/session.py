@@ -15,6 +15,8 @@ from hola.session.models import (
     Message as DBMessage,
     Memory,
     Session as DBSession,
+    Task,
+    TaskStatus,
 )
 from hola.session.storage import _get_session_temp_dir, initialize, _get_config
 from hola.session.fsm import (
@@ -79,6 +81,7 @@ class Session:
     permissions_hook: Callable[[str, int, int], tuple[bool, list[str]]] | None = (
         field(default=None)
     )
+    task_sequences: dict[str, int] = field(default_factory=dict)
 
     @property
     def cwd(self) -> str:
@@ -105,6 +108,17 @@ class Session:
             auto_save = self._create_fsm_autosave_hook()
             for transition in self.state.rules:
                 self.state.add_transition_hook(transition, auto_save)
+
+        phase_tasks = Task.query().equal(
+            'session_id', self.session_id
+        ).group('phase').select(['phase']).get()
+
+        for task in phase_tasks:
+            phase = task.data.get('phase') if hasattr(task, 'data') else task.phase
+            last_task = Task.query().equal('session_id', self.session_id).equal(
+                'phase', phase
+            ).order_by('sequence', 'desc').first()
+            self.task_sequences[phase] = last_task.sequence if last_task else 0
 
     def add_message(self, model: str, message: OMessage) -> None:
         """Add a message to conversation history."""
@@ -491,3 +505,137 @@ class Session:
         perms['modules'] = mods
         self.dbsession.permissions = perms
         self.dbsession.save()
+
+    def add_task(
+            self, phase: str, description: str, notes: str | None = None
+        ) -> Task:
+        """Create a new task with pending status. Returns the created task."""
+        phase = phase.upper()
+        if not description or not description.strip():
+            raise ValueError("Task description cannot be empty")
+        self.task_sequences[phase] = self.task_sequences.get(phase, 0) + 1
+        sequence = self.task_sequences[phase]
+
+        memory_key = None
+        if notes is not None:
+            memory_key = f"task_{phase}_{sequence}_notes"
+            self.memorize(memory_key, notes)
+
+        task = Task({
+            'id': Task.generate_id(),
+            'session_id': self.session_id,
+            'sequence': sequence,
+            'status': TaskStatus.PENDING.value,
+            'phase': phase,
+            'description': description,
+            'memory_key': memory_key,
+        })
+        task.save()
+        return task
+
+    def get_task(self, phase: str, sequence: int) -> Task | None:
+        """Get a task by phase and sequence number."""
+        phase = phase.upper()
+        return Task.query().equal('session_id', self.session_id).equal(
+            'phase', phase
+        ).equal('sequence', sequence).first()
+
+    def list_tasks(
+            self, phase: str | None = None, status: str | None = None
+        ) -> list[Task]:
+        """List tasks, optionally filtered by phase and/or status."""
+        qb = Task.query().equal('session_id', self.session_id)
+        if phase:
+            qb.equal('phase', phase.upper())
+        if status:
+            qb.equal('status', status.upper())
+        return qb.order_by('sequence', 'asc').get()
+
+    def move_task(
+            self, phase: str, old_sequence: int, new_sequence: int
+        ) -> list[str]:
+        """Move a task to a new sequence number, renumbering affected tasks."""
+        phase = phase.upper()
+        if old_sequence == new_sequence:
+            return []
+
+        tasks = Task.query().equal('session_id', self.session_id).equal(
+            'phase', phase
+        ).order_by('sequence', 'asc').get()
+
+        task_map = {t.sequence: t for t in tasks}
+        if old_sequence not in task_map:
+            return []
+
+        moved_task = task_map[old_sequence]
+        changes = []
+        descriptions = {t.sequence: t.description for t in tasks}
+
+        if new_sequence < old_sequence:
+            for seq in range(new_sequence, old_sequence):
+                task = task_map.get(seq)
+                if task:
+                    old_seq = task.sequence
+                    task.sequence = seq + 1
+                    task.save()
+                    changes.append(f"{descriptions[old_seq]}: {old_seq}->{seq + 1}")
+            moved_task.sequence = new_sequence
+            moved_task.save()
+            changes.append(
+                f"{descriptions[old_sequence]}: {old_sequence}->{new_sequence}"
+            )
+        else:
+            for seq in range(old_sequence + 1, new_sequence + 1):
+                task = task_map.get(seq)
+                if task:
+                    old_seq = task.sequence
+                    task.sequence = seq - 1
+                    task.save()
+                    changes.append(f"{descriptions[old_seq]}: {old_seq}->{seq - 1}")
+            moved_task.sequence = new_sequence
+            moved_task.save()
+            changes.append(
+                f"{descriptions[old_sequence]}: {old_sequence}->{new_sequence}"
+            )
+
+        return changes
+
+    def delete_task(self, phase: str, sequence: int) -> None:
+        """Delete a task by phase and sequence number."""
+        phase = phase.upper()
+        task = self.get_task(phase, sequence)
+        if task:
+            if task.memory_key:
+                self.forget(task.memory_key)
+            task.delete()
+
+    def complete_task(
+            self, phase: str, sequence: int, result: str | None = None
+        ) -> None:
+        """Mark a task as completed, optionally storing result in memory."""
+        phase = phase.upper()
+        task = self.get_task(phase, sequence)
+        if task:
+            task.status = TaskStatus.COMPLETED
+            task.save()
+            if result is not None:
+                memory_key = f"task_{phase}_{sequence}_result"
+                self.memorize(memory_key, result)
+
+    def reject_task(self, phase: str, sequence: int, reason: str) -> None:
+        """Mark a task as rejected and store reason in memory."""
+        phase = phase.upper()
+        task = self.get_task(phase, sequence)
+        if task:
+            task.status = TaskStatus.REJECTED
+            task.save()
+            memory_key = f"task_{phase}_{sequence}_rejection"
+            self.memorize(memory_key, reason)
+
+    def accept_task(self, phase: str, sequence: int) -> None:
+        """Mark a task as accepted."""
+        phase = phase.upper()
+        task = self.get_task(phase, sequence)
+        if task:
+            task.status = TaskStatus.ACCEPTED
+            task.save()

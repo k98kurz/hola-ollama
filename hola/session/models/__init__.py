@@ -5,6 +5,7 @@ Database models for session management using sqloquent ORM.
 from .Memory import Memory
 from .Message import Message
 from .Session import Session
+from .Task import Task, TaskStatus
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -18,6 +19,8 @@ __all__ = [
     'Memory',
     'Message',
     'Session',
+    'Task',
+    'TaskStatus',
     'set_connection_string',
     'publish_migrations',
     'automigrate',
@@ -27,8 +30,10 @@ __all__ = [
 # set relations
 Memory.session = belongs_to(Memory, Session, 'session_id')
 Message.session = belongs_to(Message, Session, 'session_id')
+Task.session = belongs_to(Task, Session, 'session_id')
 Session.memories = has_many(Session, Memory, 'session_id')
 Session.messages = has_many(Session, Message, 'session_id')
+Session.tasks = has_many(Session, Task, 'session_id')
 
 
 # helper functions
@@ -37,6 +42,7 @@ def set_connection_string(connection_string: str) -> None:
     Memory.connection_info = connection_string
     Message.connection_info = connection_string
     Session.connection_info = connection_string
+    Task.connection_info = connection_string
 
 def publish_migrations(
         migration_folder_path: Path,
@@ -52,6 +58,7 @@ def publish_migrations(
         'Memory': sqloquent.tools.make_migration_from_model(Memory),
         'Message': sqloquent.tools.make_migration_from_model(Message),
         'Session': sqloquent.tools.make_migration_from_model(Session),
+        'Task': sqloquent.tools.make_migration_from_model(Task),
     }
     for name, m in migrations.items():
         m2 = migration_callback(name, m) if migration_callback else m
