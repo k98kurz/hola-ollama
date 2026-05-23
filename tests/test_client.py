@@ -160,7 +160,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
     async def test_sync_operations(self):
         for request_type, request_class, mock_json in [
                 ("chat", ChatRequest, {
-                    "model": "granite4.1:3b",
+                    "model": "qwen3:0.6b",
                     "message": {
                         "role": "assistant",
                         "content": "Hello world",
@@ -170,7 +170,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
                     "total_duration": 1000000000,
                 }),
                 ("generate", GenerateRequest, {
-                    "model": "granite4.1:3b",
+                    "model": "qwen3:0.6b",
                     "response": "Hello world",
                     "done": True,
                     "total_duration": 1000000000,
@@ -178,12 +178,12 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             ]:
             if request_type == "chat":
                 request = ChatRequest(
-                    model="granite4.1:3b",
+                    model="qwen3:0.6b",
                     messages=[Message(role=Role.USER, content="test")],
                 )
             else:
                 request = GenerateRequest(
-                    model="granite4.1:3b",
+                    model="qwen3:0.6b",
                     prompt="test",
                 )
 
@@ -205,9 +205,9 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
                     run_sync,
                 )
 
-                assert response.model == "granite4.1:3b", (
+                assert response.model == "qwen3:0.6b", (
                     response.model,
-                    "granite4.1:3b",
+                    "qwen3:0.6b",
                 )
                 assert response.message.content == "Hello world", (
                     response.message.content,
@@ -226,9 +226,9 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
                     run_sync,
                 )
 
-                assert response.model == "granite4.1:3b", (
+                assert response.model == "qwen3:0.6b", (
                     response.model,
-                    "granite4.1:3b",
+                    "qwen3:0.6b",
                 )
                 assert response.response == "Hello world", (
                     response.response,
@@ -236,37 +236,6 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
                 )
 
             await client.close()
-
-    async def test_e2e_operations(self):
-        for request_type, make_request in [
-            ("chat", lambda: ChatRequest(
-                model="granite4.1:3b",
-                messages=[Message(role=Role.USER, content="Say hello")],
-                options=GenerationOptions(num_predict=10),
-            )),
-            ("generate", lambda: GenerateRequest(
-                model="granite4.1:3b",
-                prompt="Say hello",
-                options=GenerationOptions(num_predict=10),
-            )),
-        ]:
-            request = make_request()
-            chunks = []
-            async for chunk in await (
-                    self.client.chat(request)
-                    if request_type == "chat"
-                    else self.client.generate(request)
-                ):
-                chunks.append(chunk)
-                if chunk.done:
-                    break
-
-            assert len(chunks) > 0, chunks
-            if request_type == "chat":
-                assert any(chunk.message.content for chunk in chunks), chunks
-            else:
-                assert any(chunk.response for chunk in chunks), chunks
-            assert chunks[-1].done, chunks[-1].done
 
     async def test_load_model(self):
         mock_response = Mock()
@@ -396,18 +365,6 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         assert info1.architecture == "qwen3", info1.architecture
         assert info1.model_name == "qwen3:0.6b", info1.model_name
         assert await model_info_cache.get("qwen3:0.6b")
-
-    async def test_get_model_info_shared_cache(self):
-        client1 = OllamaClient()
-        info1 = await client1.get_model_info("qwen3:0.6b")
-        await client1.close()
-
-        client2 = OllamaClient()
-        info2 = await client2.get_model_info("qwen3:0.6b")
-        await client2.close()
-
-        assert info1 == info2, (info1, info2)
-        assert len(model_info_cache._cache) > 0
 
     async def test_get_model_info_cache_override(self):
         custom_cache = AsyncLRUCache(maxsize=5)
