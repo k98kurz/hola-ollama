@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 import unittest
+import logging
 import httpx
 from hola.ollama.client import OllamaClient
 from hola.ollama.config import ClientConfig
@@ -36,6 +37,18 @@ from hola.cache import AsyncLRUCache, model_info_cache
 
 class TestClient(unittest.IsolatedAsyncioTestCase):
     """Test cases for OllamaClient."""
+    @classmethod
+    def setUpClass(cls):
+        """Suppress error logs from hola.ollama.client during tests."""
+        cls.client_logger = logging.getLogger('hola.ollama.client')
+        cls.original_level = cls.client_logger.level
+        cls.client_logger.setLevel(logging.CRITICAL)
+
+    @classmethod
+    def tearDownClass(cls):
+        """Restore original logging level."""
+        cls.client_logger.setLevel(cls.original_level)
+
     def setUp(self):
         """Set up test fixtures."""
         self.client = OllamaClient()
@@ -88,28 +101,52 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         """Test streaming operations for both chat and generate."""
         for request_type, make_request in [
             ("chat", lambda: ChatRequest(
-                model="granite4.1:3b",
+                model="qwen3:0.6b",
                 messages=[Message(role=Role.USER, content="Say hello")],
-                options=GenerationOptions(num_predict=10),
             )),
             ("generate", lambda: GenerateRequest(
-                model="granite4.1:3b",
+                model="qwen3:0.6b",
                 prompt="Say hello",
-                options=GenerationOptions(num_predict=10),
             )),
         ]:
             request = make_request()
             chunks = []
+            accumulated_thinking = []
+            accumulated_content = []
+
             async for chunk in self.client.chat(request) if request_type == "chat" else self.client.generate(request):
                 chunks.append(chunk)
+
+                if request_type == "chat":
+                    if chunk.message.thinking:
+                        accumulated_thinking.append(chunk.message.thinking)
+                    if chunk.message.content:
+                        accumulated_content.append(chunk.message.content)
+                else:
+                    if chunk.response:
+                        accumulated_content.append(chunk.response)
+
                 if chunk.done:
                     break
 
             assert len(chunks) > 0, chunks
+
             if request_type == "chat":
                 assert any(chunk.message.content for chunk in chunks), chunks
+                complete_thinking = "".join(accumulated_thinking)
+                assert len(accumulated_thinking) > 0, (
+                    f"Expected thinking chunks but got none. Content: {''.join(accumulated_content)}"
+                )
+                assert len(complete_thinking) > 0, (
+                    f"Expected non-empty thinking but got empty. Content: {''.join(accumulated_content)}"
+                )
             else:
                 assert any(chunk.response for chunk in chunks), chunks
+                complete_content = "".join(accumulated_content)
+                assert len(complete_content) > 0, (
+                    f"Expected non-empty response but got empty."
+                )
+
             assert chunks[-1].done, chunks[-1].done
 
     async def test_sync_operations(self):
@@ -117,7 +154,11 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         for request_type, request_class, mock_json in [
             ("chat", ChatRequest, {
                 "model": "granite4.1:3b",
-                "message": {"role": "assistant", "content": "Hello world"},
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello world",
+                    "thinking": "I should greet the user."
+                },
                 "done": True,
                 "total_duration": 1000000000,
             }),
@@ -164,6 +205,10 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
                 assert response.message.content == "Hello world", (
                     response.message.content,
                     "Hello world",
+                )
+                assert response.message.thinking == "I should greet the user.", (
+                    response.message.thinking,
+                    "I should greet the user.",
                 )
             else:
                 def run_sync():
@@ -476,6 +521,44 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             ), running_models
 
             await self.client.unload_model(model_name)
+
+    async def test_thinking_field_none_when_not_present(self):
+        """Test that thinking field is None when not in response."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "model": "granite4.1:3b",
+            "message": {
+                "role": "assistant",
+                "content": "Hello",
+            },
+            "done": True,
+            "total_duration": 1000000000,
+        }
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        client = OllamaClient()
+        client._client.post = mock_post
+
+        request = ChatRequest(
+            model="granite4.1:3b",
+            messages=[Message(role=Role.USER, content="test")],
+        )
+
+        def run_sync():
+            return client.chat_sync(request)
+
+        response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            run_sync,
+        )
+
+        assert response.message.thinking is None, (
+            response.message.thinking,
+        )
+
+        await client.close()
 
 
 if __name__ == "__main__":

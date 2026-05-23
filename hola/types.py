@@ -24,6 +24,7 @@ class Message:
     content: str
     tool_calls: list[ToolCall] | None = None
     tool_name: str | None = None
+    thinking: str | None = None
 
 
 @validated_dataclass

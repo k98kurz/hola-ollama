@@ -18,6 +18,8 @@ pip install -e .          # Install package for most manual testing
 - Use the temp/ directory in the project for temporary files.
 - When testing ollama anything, use granite4.1:3b as the model.
 - For the Build agent: you MUST use todo.md to track your work for anything non-trivial
+  - Do NOT use the todowrite tool as it is broken
+  - Use ONLY todo.md with the read/write/edit tools
   - Make sure you keep the todo.md file concise
   - Include only the most important information necessary to survive context compactions
   - Once something is done, REMOVE IT from todo.md; do NOT fill the file with

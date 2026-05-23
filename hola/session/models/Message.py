@@ -16,7 +16,7 @@ class Message(SqlModel):
     id_column: str = 'id'
     columns: tuple[str,] = (
         'id', 'session_id', 'sequence', 'role', 'model', 'call_id', 'content',
-        'details'
+        'thinking', 'details'
     )
     id: str
     session_id: str
@@ -25,6 +25,7 @@ class Message(SqlModel):
     model: str | None
     call_id: str | None
     content: str
+    thinking: str | None = None
     details: bytes | None
     session: RelatedModel
 

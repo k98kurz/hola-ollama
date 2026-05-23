@@ -144,10 +144,7 @@ class OllamaClient:
                     f"HTTP error: {e}"
                 ) from e
 
-    def chat_sync(
-            self,
-            request: ChatRequest,
-        ) -> ChatResponse:
+    def chat_sync(self, request: ChatRequest) -> ChatResponse:
         """Non-streaming convenience wrapper."""
         try:
             loop = asyncio.get_running_loop()
@@ -162,10 +159,7 @@ class OllamaClient:
 
         return asyncio.run(self._chat_sync_async(request))
 
-    async def _chat_sync_async(
-            self,
-            request: ChatRequest,
-        ) -> ChatResponse:
+    async def _chat_sync_async(self, request: ChatRequest) -> ChatResponse:
         """Async implementation of non-streaming chat."""
         logger.debug("Starting non-streaming chat for model %s", request.model)
         request_dict = self._serialize_chat_request(request)
@@ -191,6 +185,7 @@ class OllamaClient:
                             else None
                         ),
                         tool_name=data["message"].get("tool_name"),
+                        thinking=data["message"].get("thinking"),
                     ),
                     done=data["done"],
                     total_duration=data.get("total_duration"),
@@ -914,6 +909,7 @@ class OllamaClient:
                 content=message_data.get("content"),
                 tool_calls=tool_calls,
                 tool_name=message_data.get("tool_name"),
+                thinking=message_data.get("thinking"),
             ),
             done=data["done"],
             done_reason=data.get("done_reason"),

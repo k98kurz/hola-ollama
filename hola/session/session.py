@@ -129,6 +129,7 @@ class Session:
             'role': message.role.value,
             'model': model,
             'content': message.content,
+            'thinking': message.thinking,
         })
         m.details = {
             'tool_name': message.tool_name,
@@ -145,7 +146,7 @@ class Session:
             sqb.equal('model', model)
 
         msgs = [
-            (m.model, OMessage(m.role, m.content))
+            (m.model, OMessage(m.role, m.content, thinking=m.thinking))
             for m in sqb.take(limit)
         ]
         msgs.reverse()
