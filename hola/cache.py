@@ -37,6 +37,3 @@ class AsyncLRUCache:
         """Clear all cache entries."""
         async with self._lock:
             self._cache.clear()
-
-
-model_info_cache: AsyncLRUCache = AsyncLRUCache(maxsize=20)

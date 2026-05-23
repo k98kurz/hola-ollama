@@ -134,8 +134,8 @@ class LLMClient(Protocol):
 
     async def chat(
             self, request: ChatRequest
-        ) -> AsyncGenerator[ChatResponseChunk, None]:
-        """Stream chat responses from the model."""
+        ) -> AsyncGenerator[ChatResponseChunk, None] | ChatResponse:
+        """Supports both streaming and non-streaming based on request.stream."""
         ...
 
     def chat_sync(self, request: ChatRequest) -> ChatResponse:
@@ -144,8 +144,8 @@ class LLMClient(Protocol):
 
     async def generate(
             self, request: GenerateRequest
-        ) -> AsyncGenerator[GenerateChunk, None]:
-        """Stream text generation from the model."""
+        ) -> AsyncGenerator[GenerateChunk, None] | GenerateResponse:
+        """Supports both streaming and non-streaming based on request.stream."""
         ...
 
     def generate_sync(self, request: GenerateRequest) -> GenerateResponse:
