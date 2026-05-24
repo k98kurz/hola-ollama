@@ -9,7 +9,28 @@ import re
 import xml.etree.ElementTree as ET
 
 
-def tools_to_xml(tools: list[ToolDefinition]) -> str:
+_instructions = """You can call tools with syntax like the following:
+```xml
+<tool name="tool_name">
+    <parameter name="param_name">value</parameter>
+</tool>
+```
+
+You can also chain tool calls, using the output of one tool call as the parameter \
+value for another, for example:
+```xml
+<tool name="outer_tool>
+    <parameter name="outer_param_name">
+        <tool name="inner_tool">
+            <parameter name="inner_param_name">...</parameter>
+        </tool>
+    </parameter>
+</tool>
+```
+If a necessary tool does not exist, inform the user that you cannot fulfill that \
+requirement."""
+
+def tools_to_xml(tools: list[ToolDefinition]) -> tuple[str, str]:
     """Convert `ToolDefinition` objects to XML format for inclusion in
         LLM prompts. Returns XML string with `<tools>` root element
         containing all tool definitions.
@@ -44,7 +65,7 @@ def tools_to_xml(tools: list[ToolDefinition]) -> str:
 
     xml_parts.append("</tools>")
 
-    return "\n".join(xml_parts)
+    return "\n".join(xml_parts), _instructions
 
 
 def _get_example_value(param_type: str) -> str:

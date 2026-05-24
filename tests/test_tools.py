@@ -641,7 +641,9 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["a", "b"],
             },
         )
-        xml = tools_to_xml([tool_def])
+        xml, instructions = tools_to_xml([tool_def])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         assert "<tools>" in xml, xml
         assert "</tools>" in xml, xml
         assert "<tool name=\"add_numbers\">" in xml, xml
@@ -662,7 +664,9 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["parts"],
             },
         )
-        xml = tools_to_xml([tool_def])
+        xml, instructions = tools_to_xml([tool_def])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         assert "<tool name=\"concatenate\">" in xml, xml
         assert xml.count("<parameter name=\"parts\">") == 2, xml
         assert "<parameter name=\"parts\">\"example\"</parameter>" in xml, xml
@@ -690,7 +694,9 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["a", "b"],
             },
         )
-        xml = tools_to_xml([tool_def1, tool_def2])
+        xml, instructions = tools_to_xml([tool_def1, tool_def2])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         assert "<tool name=\"add_numbers\">" in xml, xml
         assert "<tool name=\"multiply\">" in xml, xml
         assert xml.count("<tool name=") == 2, xml
@@ -706,7 +712,9 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["enabled"],
             },
         )
-        xml = tools_to_xml([tool_def_bool])
+        xml, instructions = tools_to_xml([tool_def_bool])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         assert "<parameter name=\"enabled\">true</parameter>" in xml, xml
 
         tool_def_str = ToolDefinition(
@@ -718,7 +726,9 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["name"],
             },
         )
-        xml = tools_to_xml([tool_def_str])
+        xml, instructions = tools_to_xml([tool_def_str])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         assert "<parameter name=\"name\">\"example\"</parameter>" in xml, xml
 
         tool_def_num = ToolDefinition(
@@ -730,12 +740,16 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["value"],
             },
         )
-        xml = tools_to_xml([tool_def_num])
+        xml, instructions = tools_to_xml([tool_def_num])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         assert "<parameter name=\"value\">3.14</parameter>" in xml, xml
 
     def test_format_edge_cases(self):
         """Test formatting empty tool list and tool without properties."""
-        xml = tools_to_xml([])
+        xml, instructions = tools_to_xml([])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         assert xml == "<tools>\n</tools>", xml
 
         tool_def = ToolDefinition(
@@ -743,7 +757,9 @@ class TestXMLCompatibility(unittest.TestCase):
             description="Simple ping",
             parameters={"type": "object", "properties": {}},
         )
-        xml = tools_to_xml([tool_def])
+        xml, instructions = tools_to_xml([tool_def])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         assert "<tool name=\"ping\">\n  </tool>" in xml, xml
 
     def test_parse_simple_tool(self):
@@ -916,7 +932,9 @@ class TestXMLCompatibility(unittest.TestCase):
                 "required": ["a", "b"],
             },
         )
-        xml = tools_to_xml([tool_def])
+        xml, instructions = tools_to_xml([tool_def])
+        assert isinstance(xml, str), xml
+        assert isinstance(instructions, str), instructions
         xml_with_values = xml.replace("42", "5").replace('"example"', '"hello"')
         tool_calls = parse_tool_calls_from_xml(xml_with_values)
         assert len(tool_calls) == 1, len(tool_calls)
