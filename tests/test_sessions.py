@@ -280,7 +280,7 @@ class TestSessionDataStorage(unittest.TestCase):
             self.session.add_message(
                 "granite4.1:3b", OMessage(role=Role.USER, content=str(i))
             )
-        assert self.session.sequence == initial_seq + 5, self.session.sequence
+        assert self.session.sequence == initial_seq + 10, self.session.sequence
 
         msgs = [
             OMessage(role=Role.USER, content="Hello"),

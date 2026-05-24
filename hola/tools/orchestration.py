@@ -3,7 +3,7 @@ Orchestration tools for task management in workflow phases.
 """
 
 from hola.tools.core import tool
-from hola.protocols import SessionProtocol
+from hola.types import SessionProtocol
 
 
 @tool(

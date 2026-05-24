@@ -7,8 +7,8 @@ from io import StringIO
 from multiprocessing import Process, Queue
 from typing import Any
 from hola.errors import PermissionDeniedError, VerificationException
-from hola.protocols import SessionProtocol
 from hola.tools.core import tool
+from hola.types import SessionProtocol
 import ast
 import builtins
 import os

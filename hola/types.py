@@ -5,6 +5,7 @@ Core types for LLM client interactions.
 from __future__ import annotations
 from collections.abc import AsyncGenerator
 from enum import Enum
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 from hola.errors import validated_dataclass
 from hola.tools.types import ToolCall, ToolDefinition
@@ -25,6 +26,32 @@ class Message:
     tool_calls: list[ToolCall] | None = None
     tool_name: str | None = None
     thinking: str | None = None
+
+
+class SessionProtocol(Protocol):
+    """Minimal session interface for tool execution."""
+
+    @property
+    def cwd(self) -> str:
+        """Current working directory."""
+        ...
+
+    @property
+    def file_permissions(self) -> dict[str, dict[str, bool]]:
+        """Get all file permissions as a simple dict format."""
+        ...
+
+    def get_file_permission(self, path: Path | str) -> Permission:
+        """Get effective permission for a path."""
+        ...
+
+    def memorize(self, key: str, value: object) -> None:
+        """Store a key-value pair in session memory."""
+        ...
+
+    def recall(self, key: str) -> object:
+        """Retrieve a value from session memory by key."""
+        ...
 
 
 @validated_dataclass
