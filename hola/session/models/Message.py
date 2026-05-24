@@ -15,17 +15,19 @@ class Message(SqlModel):
     table: str = 'messages'
     id_column: str = 'id'
     columns: tuple[str,] = (
-        'id', 'session_id', 'sequence', 'role', 'model', 'call_id', 'content',
-        'thinking', 'details'
+        'id', 'session_id', 'sequence', 'role', 'model', 'phase', 'call_id',
+        'content', 'thinking', 'compacted_by', 'details'
     )
     id: str
     session_id: str
     sequence: int
     role: str | Default['user']
     model: str | None
+    phase: str | None = None
     call_id: str | None
     content: str
     thinking: str | None = None
+    compacted_by: str | None = None
     details: bytes | None
     session: RelatedModel
 

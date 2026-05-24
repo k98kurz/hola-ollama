@@ -7,6 +7,7 @@ from hola.session import Session
 from hola.session.storage import initialize
 from hola.session.models import Task, TaskStatus
 from hola.tools.core import list_tools
+from hola.helpers import get_memory_key
 import shutil
 import unittest
 
@@ -273,7 +274,8 @@ class TestTaskLifecycle(unittest.TestCase):
         """Test adding task stores notes in memory."""
         task = self.session.add_task('PLANNING', 'Task with notes', 'Detailed notes here')
         assert task.memory_key is not None, task.memory_key
-        assert task.memory_key == 'task_PLANNING_1_notes', task.memory_key
+        expected_key = get_memory_key('Task with notes')
+        assert task.memory_key == expected_key, task.memory_key
 
         notes = self.session.recall(task.memory_key)
         assert notes == 'Detailed notes here', notes
@@ -309,8 +311,9 @@ class TestTaskLifecycle(unittest.TestCase):
         result = 'Final result data'
         self.session.complete_task('EXECUTING', 1, result)
 
-        stored = self.session.recall('task_EXECUTING_1_result')
-        assert stored == result, stored
+        memory_key = get_memory_key('Task to complete')
+        stored = self.session.recall(memory_key)
+        assert stored == {'completion': result}, stored
 
     def test_reject_task_marks_rejected(self):
         """Test rejecting task marks status as REJECTED."""
@@ -326,8 +329,27 @@ class TestTaskLifecycle(unittest.TestCase):
         reason = 'Implementation does not meet requirements'
         self.session.reject_task('REVIEWING', 1, reason)
 
-        stored = self.session.recall('task_REVIEWING_1_rejection')
-        assert stored == reason, stored
+        memory_key = get_memory_key('Task to reject')
+        stored = self.session.recall(memory_key)
+        assert stored == {'rejection': reason}, stored
+
+    def test_complete_task_with_notes_merges_into_memo(self):
+        """Test completing a task with notes merges completion into existing memo."""
+        task = self.session.add_task('EXECUTING', 'Test task', 'Initial notes')
+        self.session.complete_task('EXECUTING', 1, 'Result: success')
+
+        memory_key = get_memory_key('Test task')
+        stored = self.session.recall(memory_key)
+        assert stored == {'notes': 'Initial notes', 'completion': 'Result: success'}, stored
+
+    def test_reject_task_with_notes_merges_into_memo(self):
+        """Test rejecting a task with notes merges rejection into existing memo."""
+        task = self.session.add_task('REVIEWING', 'Test task 2', 'Initial notes')
+        self.session.reject_task('REVIEWING', 1, 'Invalid approach')
+
+        memory_key = get_memory_key('Test task 2')
+        stored = self.session.recall(memory_key)
+        assert stored == {'notes': 'Initial notes', 'rejection': 'Invalid approach'}, stored
 
     def test_accept_task_marks_accepted(self):
         """Test accepting task marks status as ACCEPTED."""

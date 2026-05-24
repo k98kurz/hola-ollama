@@ -49,7 +49,7 @@ def add_task(
 
 @tool(
     name="move_task",
-    description="Move a task to a new sequence, renumbering affected tasks"
+    description="Move a task to a new sequence, renumbering subsequent tasks"
 )
 def move_task(
         session: SessionProtocol, phase: str, old_sequence: int,

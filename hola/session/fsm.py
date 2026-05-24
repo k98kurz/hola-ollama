@@ -11,6 +11,7 @@ class WorkflowState(Enum):
     INIT = auto()
     PLANNING = auto()
     EXECUTING = auto()
+    REVIEWING_TASK = auto()
     REVIEWING = auto()
     DONE = auto()
 
@@ -19,6 +20,7 @@ class WorkflowEvent(Enum):
     """Events for the workflow FSM."""
     START = auto()
     EXECUTE = auto()
+    REVIEW_TASK = auto()
     REVIEW = auto()
     REJECTED = auto()
     ACCEPTED = auto()
@@ -33,6 +35,21 @@ class WorkflowFSM(FSM):
         ),
         Transition(
             WorkflowState.PLANNING, WorkflowEvent.EXECUTE, WorkflowState.EXECUTING
+        ),
+        Transition(
+            WorkflowState.EXECUTING,
+            WorkflowEvent.REVIEW_TASK,
+            WorkflowState.REVIEWING_TASK
+        ),
+        Transition(
+            WorkflowState.REVIEWING_TASK,
+            WorkflowEvent.REJECTED,
+            WorkflowState.PLANNING
+        ),
+        Transition(
+            WorkflowState.REVIEWING_TASK,
+            WorkflowEvent.ACCEPTED,
+            WorkflowState.EXECUTING
         ),
         Transition(
             WorkflowState.EXECUTING, WorkflowEvent.REVIEW, WorkflowState.REVIEWING

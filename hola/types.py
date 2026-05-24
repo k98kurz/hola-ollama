@@ -6,9 +6,20 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from enum import Enum
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 from hola.errors import validated_dataclass
 from hola.tools.types import ToolCall, ToolDefinition
+
+
+__all__ = [
+    'Role', 'Message', 'SessionProtocol',
+    'ChatResponseChunk', 'ChatResponse',
+    'ModelInfo', 'ModelMetadata',
+    'GenerateChunk', 'GenerateResponse', 'GenerationOptions',
+    'ChatRequest', 'GenerateRequest',
+    'LLMClient', 'PromptGenerator', 'Adapter',
+    'ToolCall', 'ToolDefinition',
+]
 
 
 class Role(Enum):
@@ -30,7 +41,6 @@ class Message:
 
 class SessionProtocol(Protocol):
     """Minimal session interface for tool execution."""
-
     @property
     def cwd(self) -> str:
         """Current working directory."""
@@ -190,3 +200,14 @@ class LLMClient(Protocol):
     async def close(self) -> None:
         """Close the client and cleanup resources."""
         ...
+
+
+PromptGenerator = Callable[
+    [SessionProtocol, str, dict[str, str] | None],
+    list[Message]
+]
+
+Adapter = Callable[
+    [list[Message], list[ToolDefinition]],
+    ChatRequest | GenerateRequest
+]

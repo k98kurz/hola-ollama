@@ -5,7 +5,8 @@ Session class for Hola session management.
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
-from hola.types import Message as OMessage, Role
+from hola.helpers import get_memory_key
+from hola.permissions import Permission
 from hola.session.exceptions import (
     SessionDeleteError,
     SessionError,
@@ -25,7 +26,7 @@ from hola.session.fsm import (
     WorkflowState,
     WorkflowEvent,
 )
-from hola.permissions import Permission
+from hola.types import Message as OMessage, Role
 import packify
 import os
 import fnmatch
@@ -101,7 +102,7 @@ class Session:
         if last_m_list:
             last_m = last_m_list[0]
             if last_m.sequence:
-                self.sequence = last_m.sequence + 1
+                self.sequence = last_m.sequence + 2
 
         if not self.dbsession.state:
             self.state = WorkflowFSM()
@@ -122,7 +123,7 @@ class Session:
 
     def add_message(self, model: str, message: OMessage) -> None:
         """Add a message to conversation history."""
-        self.sequence += 1
+        self.sequence += 2
         m = DBMessage({
             'session_id': self.session_id,
             'sequence': self.sequence,
@@ -160,8 +161,10 @@ class Session:
 
     def add_tool_output(self, call_id: str, result: object) -> None:
         """Set tool output by call ID. Stored as Message with Role.TOOL."""
+        self.sequence += 2
         m = DBMessage({
             'session_id': self.session_id,
+            'sequence': self.sequence,
             'role': Role.TOOL.value,
             'content': '',
             'call_id': call_id,
@@ -519,7 +522,7 @@ class Session:
 
         memory_key = None
         if notes is not None:
-            memory_key = f"task_{phase}_{sequence}_notes"
+            memory_key = get_memory_key(description)
             self.memorize(memory_key, notes)
 
         task = Task({
@@ -620,8 +623,14 @@ class Session:
             task.status = TaskStatus.COMPLETED
             task.save()
             if result is not None:
-                memory_key = f"task_{phase}_{sequence}_result"
-                self.memorize(memory_key, result)
+                memory_key = get_memory_key(task.description)
+                memo = self.recall(memory_key)
+                if not memo:
+                    memo = {}
+                if not isinstance(memo, dict):
+                    memo = {"notes": memo}
+                memo["completion"] = result
+                self.memorize(memory_key, memo)
 
     def reject_task(self, phase: str, sequence: int, reason: str) -> None:
         """Mark a task as rejected and store reason in memory."""
@@ -630,8 +639,14 @@ class Session:
         if task:
             task.status = TaskStatus.REJECTED
             task.save()
-            memory_key = f"task_{phase}_{sequence}_rejection"
-            self.memorize(memory_key, reason)
+            memory_key = get_memory_key(task.description)
+            memo = self.recall(memory_key)
+            if not memo:
+                memo = {}
+            if not isinstance(memo, dict):
+                memo = {"notes": memo}
+            memo["rejection"] = reason
+            self.memorize(memory_key, memo)
 
     def accept_task(self, phase: str, sequence: int) -> None:
         """Mark a task as accepted."""
