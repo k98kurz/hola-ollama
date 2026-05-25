@@ -238,6 +238,17 @@ class Session:
         self.dbsession.metadata = metadata
         self.dbsession.save()
 
+    def unset_metadata(self, *keys: str) -> None:
+        """Unset the specified metadata keys if they exist."""
+        if not any([k in self.dbsession.metadata for k in keys]):
+            return
+        metadata = self.dbsession.metadata
+        for k in set(keys):
+            if k in metadata:
+                del metadata[k]
+        self.dbsession.metadata = metadata
+        self.dbsession.save()
+
     def get_metadata(
             self, key: str, default: object = None
         ) -> object:
@@ -247,6 +258,30 @@ class Session:
     def list_metadata(self) -> dict[str, object]:
         """List all metadata."""
         return self.dbsession.metadata
+
+    @property
+    def config(self) -> dict[str, object]:
+        """The config dict for the session."""
+        return self.dbsession.config
+
+    @config.setter
+    def config(self, val: dict) -> None:
+        config = self.dbsession.config
+        for k, v in val.items():
+            config[k] = v
+        self.dbsession.config = config
+        self.dbsession.save()
+
+    def unset_config(self, *keys: str) -> None:
+        """Unset the given config keys if they exist."""
+        if not any([k in self.dbsession.config for k in keys]):
+            return
+        config = self.dbsession.config
+        for k in set(keys):
+            if k in config:
+                del config[k]
+        self.dbsession.config = config
+        self.dbsession.save()
 
     def memorize(self, key: str, value: object) -> None:
         """Memorize a key-value pair."""

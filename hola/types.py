@@ -51,6 +51,11 @@ class SessionProtocol(Protocol):
         """Get all file permissions as a simple dict format."""
         ...
 
+    @property
+    def config(self) -> dict[str, object]:
+        """Access the session config."""
+        ...
+
     def get_file_permission(self, path: Path | str) -> Permission:
         """Get effective permission for a path."""
         ...
@@ -184,7 +189,6 @@ class GenerateRequest:
 @runtime_checkable
 class LLMClient(Protocol):
     """Protocol for LLM client implementations."""
-
     async def chat(
             self, request: ChatRequest
         ) -> AsyncGenerator[ChatResponseChunk, None] | ChatResponse:

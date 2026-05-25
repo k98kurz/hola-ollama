@@ -63,7 +63,8 @@ class TestSessionLifecycle(unittest.TestCase):
         assert session_id.startswith("20"), session_id
         assert self.test_tag[:8] in session_id, session_id
         retrieved_session = get_session(session_id, portable=True)
-        assert retrieved_session.session_id == session_id, retrieved_session.session_id
+        assert retrieved_session.session_id == session_id, (
+            retrieved_session.session_id)
         session.delete()
 
         session_id = "init_test"
@@ -253,7 +254,9 @@ class TestTempFiles(unittest.TestCase):
 
 
 class TestSessionDataStorage(unittest.TestCase):
-    """Test cases for session data storage (messages, tool outputs, metadata, memory)."""
+    """Test cases for session data storage (messages, tool outputs,
+        metadata, memory).
+    """
     def setUp(self):
         """Set up test fixtures."""
         initialize(True)
@@ -305,7 +308,9 @@ class TestSessionDataStorage(unittest.TestCase):
 
         for i in range(10):
             model = "model_a" if i % 2 == 0 else "model_b"
-            self.session.add_message(model, OMessage(role=Role.USER, content=str(i)))
+            self.session.add_message(
+                model, OMessage(role=Role.USER, content=str(i))
+            )
 
         history_a = self.session.get_history(model="model_a")
         history_b = self.session.get_history(model="model_b")
@@ -319,7 +324,9 @@ class TestSessionDataStorage(unittest.TestCase):
 
         history = self.session.get_history()
         contents = [msg[1].content for msg in history]
-        assert contents[-5:] == ["Msg 0", "Msg 1", "Msg 2", "Msg 3", "Msg 4"], contents
+        assert contents[-5:] == [
+            "Msg 0", "Msg 1", "Msg 2", "Msg 3", "Msg 4"
+        ], contents
 
     def test_tool_outputs_crud(self):
         """Test tool output add, get, list, delete operations."""
@@ -380,6 +387,9 @@ class TestSessionDataStorage(unittest.TestCase):
         value = self.session.get_metadata("test_key")
         assert value == {"nested": "data"}, value
 
+        self.session.unset_metadata("test_key")
+        assert self.session.get_metadata("test_key", "default") == "default"
+
     def test_metadata_filtering(self):
         """Test metadata listing and default values."""
         metadata = self.session.list_metadata()
@@ -430,6 +440,41 @@ class TestSessionDataStorage(unittest.TestCase):
         assert value is None, value
 
         self.session.forget("nonexistent")
+
+    def test_config_crud(self):
+        """Test config get, set, unset operations and persistence."""
+        config = self.session.config
+        assert len(config) == 0, len(config)
+
+        self.session.config = {"key1": "value1"}
+        config = self.session.config
+        assert config["key1"] == "value1", config["key1"]
+
+        self.session.config = {"key2": 123, "key3": [1, 2, 3]}
+        config = self.session.config
+        assert config["key1"] == "value1", config["key1"]
+        assert config["key2"] == 123, config["key2"]
+        assert config["key3"] == [1, 2, 3], config["key3"]
+
+        self.session.unset_config("key1")
+        config = self.session.config
+        assert "key1" not in config, "key1 still exists"
+        assert config["key2"] == 123, config["key2"]
+
+        self.session.unset_config("key2", "key3")
+        config = self.session.config
+        assert len(config) == 0, len(config)
+
+        self.session.unset_config("nonexistent", "also_nonexistent")
+        config = self.session.config
+        assert len(config) == 0, len(config)
+
+        session_id = self.session.session_id
+        self.session.config = {"persisted": True, "value": "test"}
+        reloaded = get_session(session_id, portable=True)
+        config = reloaded.config
+        assert config["persisted"] is True, config["persisted"]
+        assert config["value"] == "test", config["value"]
 
     def test_clear_history(self):
         """Test clearing history and resetting sequence."""
@@ -560,7 +605,9 @@ class TestSessionIntegration(unittest.TestCase):
             shutil.rmtree(hola_dir)
 
     def test_full_lifecycle_workflow(self):
-        """Test complete session workflow with lifecycle, persistence, and mixed operations."""
+        """Test complete session workflow with lifecycle, persistence,
+            and mixed operations.
+        """
         initialize(True)
         session = create_session(tag="lifecycle", portable=True)
         session_id = session.session_id
@@ -604,8 +651,6 @@ class TestSessionIntegration(unittest.TestCase):
         assert len(history) == 1, len(history)
         assert len(files) == 1, len(files)
 
-        session.delete()
-
     def test_session_isolation(self):
         """Test that multiple sessions don't interfere with each other."""
         initialize(True)
@@ -620,9 +665,6 @@ class TestSessionIntegration(unittest.TestCase):
 
         assert val1 == "value1", val1
         assert val2 == "value2", val2
-
-        session1.delete()
-        session2.delete()
 
 
 if __name__ == "__main__":
