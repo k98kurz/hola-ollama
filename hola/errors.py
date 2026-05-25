@@ -1,6 +1,8 @@
+from asyncio import iscoroutine, sleep
 from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
-from typing import Any, get_args, get_origin, get_type_hints, Union
+from logging import Logger
+from typing import Any, Callable, get_args, get_origin, get_type_hints, Union
 
 
 def type_assert(condition: bool, message: str = 'invalid type') -> None:
@@ -173,3 +175,35 @@ class PermissionDeniedError(Exception):
 
 class VerificationException(Exception):
     """Raised when code violates the AST blacklist."""
+
+def retry_with_backoff(
+        max_tries: int = 3, base_delay: float = 5.0, delay_mult: float = 2.0,
+        allowed_exception_classes: list[type] = None, logger: Logger = None
+    ) -> Callable:
+    """Decorator for a method that can be retried with a back-off. If
+        `allowed_exception_classes` is not supplied, the decorated
+        function will be retried on all exceptions.
+    """
+    def decorator(fn: Callable) -> Callable:
+        async def inner(*args, **kwargs):
+            delay = base_delay
+            for i in range(1, max_tries+1):
+                try:
+                    res = fn(*args, **kwargs)
+                    if iscoroutine(res):
+                        return await res
+                    return res
+                except Exception as e:
+                    if logger:
+                        logger.error(str(e))
+                    if i == max_tries:
+                        raise e
+                    if  (   allowed_exception_classes
+                            and type(e) not in allowed_exception_classes
+                        ):
+                        raise e
+                    await sleep(delay)
+                    delay *= delay_mult
+        return inner
+    return decorator
+
