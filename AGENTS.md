@@ -13,6 +13,7 @@ pip install -e .          # Install package for most manual testing
 
 # Testing & Building Convention
 
+- NEVER, under ANY CIRCUMSTANCES, run `git checkout` on a file. NEVER.
 - When writing ephemeral test code, use a minimum number of print statements to
   conserve output tokens.
 - Use the temp/ directory in the project for temporary files.

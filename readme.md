@@ -38,6 +38,7 @@ with deterministic execution guarantees and reasonable security measures.
 - [ ] Skill system supporting skill installation in hola-specific locations as well
   as .agents/, .claude/, .opencode/, .cursor/ within the CWD
 - [ ] CLI tool for launching a session with a specified workflow/agent
+- [ ] File tree snapshot system to enable rolling back changes
 - [ ] Optional long-term, inter-session memory systems (e.g. soul.md)
 - [ ] Optional daemon with scheduled workflows/agents
 - [ ] Optional TUI
