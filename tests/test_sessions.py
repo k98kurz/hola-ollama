@@ -497,7 +497,7 @@ class TestSessionFSMData(unittest.TestCase):
             reloaded.state.current
         )
 
-        reloaded.state.input(WorkflowEvent.REJECTED)
+        reloaded.state.input(WorkflowEvent.REJECT)
         reloaded = get_session(session_id, portable=True)
         reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
         assert reloaded.state.current == WorkflowState.PLANNING, (

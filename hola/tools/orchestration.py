@@ -59,10 +59,7 @@ def move_task(
     return session.move_task(phase, old_sequence, new_sequence)
 
 
-@tool(
-    name="delete_task",
-    description="Delete a task by phase and sequence number"
-)
+@tool(name="delete_task", description="Delete a task by phase and sequence number")
 def delete_task(
         session: SessionProtocol, phase: str, sequence: int
     ) -> None:
@@ -82,6 +79,14 @@ def complete_task(
     session.complete_task(phase, sequence, result)
 
 
+@tool(name="accept_task", description="Mark a task as accepted")
+def accept_task(
+        session: SessionProtocol, phase: str, sequence: int
+    ) -> None:
+    """Mark a task as accepted."""
+    session.accept_task(phase, sequence)
+
+
 @tool(
     name="reject_task",
     description="Mark a task as rejected and store reason in memory"
@@ -93,12 +98,13 @@ def reject_task(
     session.reject_task(phase, sequence, reason)
 
 
-@tool(
-    name="accept_task",
-    description="Mark a task as accepted"
-)
-def accept_task(
-        session: SessionProtocol, phase: str, sequence: int
-    ) -> None:
-    """Mark a task as accepted."""
-    session.accept_task(phase, sequence)
+@tool(name="accept", description="Mark the work done as acceptable")
+def accept(session: SessionProtocol) -> None:
+    """Mark the workflow as done and the work as acceptable."""
+    session.accept()
+
+
+@tool(name="reject", description="Reject the work done with actionable feedback")
+def reject(session: SessionProtocol, reason: str) -> None:
+    """Mark the workflow as done and the work as acceptable."""
+    session.reject(reason)

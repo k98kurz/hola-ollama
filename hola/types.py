@@ -63,6 +63,22 @@ class SessionProtocol(Protocol):
         """Retrieve a value from session memory by key."""
         ...
 
+    def accept_task(self, phase: str, sequence: int) -> None:
+        """Mark the task as accepted by the review agent."""
+        ...
+
+    def reject_task(self, phase: str, sequence: int, reason: str) -> None:
+        """Mark the task as rejcted with a reason by the review agent."""
+        ...
+
+    def accept(self) -> None:
+        """Mark the workflow as accepted by the reviewer agent."""
+        ...
+
+    def reject(self, reason: str) -> None:
+        """Mark the workflow as rejected with a reason by the review agent."""
+        ...
+
 
 @validated_dataclass
 class ChatResponseChunk:

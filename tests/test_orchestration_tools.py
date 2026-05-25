@@ -21,7 +21,7 @@ class TestOrchestrationToolsRegistration(unittest.TestCase):
 
         expected_tools = [
             'view_tasks', 'add_task', 'move_task', 'delete_task',
-            'complete_task', 'reject_task', 'accept_task'
+            'complete_task', 'reject_task', 'accept_task', 'accept', 'reject'
         ]
 
         for tool_name in expected_tools:
@@ -34,7 +34,7 @@ class TestOrchestrationToolsRegistration(unittest.TestCase):
 
         expected_tools = [
             'view_tasks', 'add_task', 'move_task', 'delete_task',
-            'complete_task', 'reject_task', 'accept_task'
+            'complete_task', 'reject_task', 'accept_task', 'accept', 'reject'
         ]
 
         for tool_name in expected_tools:
@@ -375,6 +375,40 @@ class TestTaskLifecycle(unittest.TestCase):
 
         notes = self.session.recall(memory_key)
         assert notes is None, notes
+
+    def test_accept_workflow(self):
+        """Test accepting workflow sets status in FSM context."""
+        self.session.accept()
+        assert self.session.state.context['status'] == 'accepted', self.session.state.context['status']
+
+    def test_reject_workflow(self):
+        """Test rejecting workflow sets status and reason in FSM context."""
+        reason = 'Code quality issues found'
+        self.session.reject(reason)
+        assert self.session.state.context['status'] == 'rejected', self.session.state.context['status']
+        assert self.session.state.context['reject_reason'] == reason, self.session.state.context['reject_reason']
+
+    def test_reject_override(self):
+        """Test multiple reject calls override previous reason."""
+        self.session.reject('First reason')
+        assert self.session.state.context['reject_reason'] == 'First reason'
+
+        new_reason = 'Updated rejection reason'
+        self.session.reject(new_reason)
+        assert self.session.state.context['reject_reason'] == new_reason, self.session.state.context['reject_reason']
+
+    def test_workflow_status_persists(self):
+        """Test workflow status persists across session reloads."""
+        session_id = self.session.session_id
+        reason = 'Security vulnerability'
+        self.session.reject(reason)
+
+        reloaded = Session(session_id, portable=True)
+        reloaded.load_fsm_data()
+        assert reloaded.state.context['status'] == 'rejected', (
+            reloaded.state.context['status'])
+        assert reloaded.state.context['reject_reason'] == reason, (
+            reloaded.state.context['reject_reason'])
 
 
 class TestTaskMoveOperations(unittest.TestCase):

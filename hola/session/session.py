@@ -102,7 +102,7 @@ class Session:
         if last_m_list:
             last_m = last_m_list[0]
             if last_m.sequence:
-                self.sequence = last_m.sequence + 2
+                self.sequence = last_m.sequence
 
         if not self.dbsession.state:
             self.state = WorkflowFSM()
@@ -110,16 +110,15 @@ class Session:
             for transition in self.state.rules:
                 self.state.add_transition_hook(transition, auto_save)
 
-        phase_tasks = Task.query().equal(
+        task_phases = Task.query().equal(
             'session_id', self.session_id
         ).group('phase').select(['phase']).get()
 
-        for task in phase_tasks:
-            phase = task.data.get('phase') if hasattr(task, 'data') else task.phase
+        for row in task_phases:
             last_task = Task.query().equal('session_id', self.session_id).equal(
-                'phase', phase
+                'phase', row.data['phase']
             ).order_by('sequence', 'desc').first()
-            self.task_sequences[phase] = last_task.sequence if last_task else 0
+            self.task_sequences[row.data['phase']] = last_task.sequence if last_task else 0
 
     def add_message(self, model: str, message: OMessage) -> None:
         """Add a message to conversation history."""
@@ -211,11 +210,15 @@ class Session:
         self.dbsession.state = self.state.pack()
         self.dbsession.save()
 
-    def load_fsm_data(self, fsm_class: type[FSM], inject: dict = {}) -> None:
+    def load_fsm_data(
+            self, fsm_class: type[FSM] = WorkflowFSM, inject: dict = {}
+        ) -> None:
         """Load FSM from storage with provided inject dependencies."""
         if not self.dbsession.state:
             raise SessionError("No FSM data found in session")
-        self.state = fsm_class.unpack(self.dbsession.state, inject=inject)
+        self.state = fsm_class.unpack(
+            self.dbsession.state, inject={**globals(), **inject}
+        )
 
         auto_save = self._create_fsm_autosave_hook()
         for transition in self.state.rules:
@@ -632,6 +635,14 @@ class Session:
                 memo["completion"] = result
                 self.memorize(memory_key, memo)
 
+    def accept_task(self, phase: str, sequence: int) -> None:
+        """Mark a task as accepted."""
+        phase = phase.upper()
+        task = self.get_task(phase, sequence)
+        if task:
+            task.status = TaskStatus.ACCEPTED
+            task.save()
+
     def reject_task(self, phase: str, sequence: int, reason: str) -> None:
         """Mark a task as rejected and store reason in memory."""
         phase = phase.upper()
@@ -648,10 +659,13 @@ class Session:
             memo["rejection"] = reason
             self.memorize(memory_key, memo)
 
-    def accept_task(self, phase: str, sequence: int) -> None:
-        """Mark a task as accepted."""
-        phase = phase.upper()
-        task = self.get_task(phase, sequence)
-        if task:
-            task.status = TaskStatus.ACCEPTED
-            task.save()
+    def accept(self) -> None:
+        """Mark the workflow as accepted by the reviewer agent."""
+        self.state.context['status'] = 'accepted'
+        self.save_fsm_data()
+
+    def reject(self, reason: str) -> None:
+        """Mark the workflow as rejected with a reason by the review agent."""
+        self.state.context['status'] = 'rejected'
+        self.state.context['reject_reason'] = reason
+        self.save_fsm_data()
