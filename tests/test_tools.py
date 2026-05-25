@@ -114,6 +114,40 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             "add_numbers",
         )
 
+    async def test_tool_def_attribute(self):
+        """Test that tool_def attribute is set on function objects."""
+        def test_func(x: int, y: str) -> str:
+            return f"{x}:{y}"
+
+        tool_def = ToolDefinition(
+            name="test_tool",
+            description="Test tool",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer"},
+                    "y": {"type": "string"},
+                },
+                "required": ["x", "y"],
+            },
+        )
+
+        self.registry.register_tool(tool_def, test_func)
+
+        assert hasattr(test_func, "tool_def")
+        assert test_func.tool_def is not None
+        assert test_func.tool_def.name == "test_tool"
+        assert test_func.tool_def.description == "Test tool"
+        assert test_func.tool_def.parameters is not None
+
+        @tool(name="decorated_tool", description="Decorated tool")
+        def decorated_func(a: int) -> int:
+            return a * 2
+
+        assert hasattr(decorated_func, "tool_def")
+        assert decorated_func.tool_def is not None
+        assert decorated_func.tool_def.name == "decorated_tool"
+
     async def test_schema_generation_basic_types(self):
         """Test JSON schema generation for basic types."""
         @tool(name="test_tool", description="Test tool")

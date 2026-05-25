@@ -2,7 +2,7 @@
 Adapter functions for transforming Message lists into provider-specific formats.
 """
 
-from hola.types import ChatRequest, GenerateRequest, Message
+from hola.types import ChatRequest, GenerateRequest, Message, Role
 from hola.tools.compat import tools_to_xml
 from hola.tools.types import ToolDefinition
 

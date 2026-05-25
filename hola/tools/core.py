@@ -140,8 +140,7 @@ def _interpolate_template(
 
 
 def _interpolate_arguments(
-        args: dict[str, Any],
-        session: SessionProtocol | None,
+        args: dict[str, Any], session: SessionProtocol | None
     ) -> dict[str, Any]:
     """Recursively interpolate template variables in arguments."""
     if session is None:
@@ -194,10 +193,7 @@ def _generate_schema(func: Callable[..., Any]) -> dict[str, Any]:
     }
 
 
-def _validate_args(
-        args: dict[str, Any],
-        schema: dict[str, Any],
-    ) -> None:
+def _validate_args(args: dict[str, Any], schema: dict[str, Any]) -> None:
     """Basic type checking for tool arguments against schema."""
     properties = schema.get("properties", {})
 
@@ -287,10 +283,7 @@ def _type_to_schema(type_hint: Any) -> dict[str, Any]:
     return {"type": "object"}
 
 
-def _convert_type(
-        value: Any,
-        target_type: type,
-    ) -> Any:
+def _convert_type(value: Any, target_type: type) -> Any:
     """Convert value to target type if possible."""
     if target_type is str:
         return str(value)
@@ -493,29 +486,19 @@ class ToolRegistry:
         self._tools: dict[str, ToolDefinition] = {}
         self._functions: dict[str, Callable[..., Any]] = {}
 
-    def register_tool(
-            self,
-            tool: ToolDefinition,
-            func: Callable[..., Any],
-        ) -> None:
+    def register_tool(self, tool: ToolDefinition, func: Callable[..., Any]) -> None:
+        func.tool_def = tool
         self._tools[tool.name] = tool
         self._functions[tool.name] = func
 
-    def get_tool(
-            self,
-            name: str,
-        ) -> ToolDefinition | None:
+    def get_tool(self, name: str,) -> ToolDefinition | None:
         return self._tools.get(name)
 
-    def list_tools(
-            self,
-        ) -> list[ToolDefinition]:
+    def list_tools(self) -> list[ToolDefinition]:
         return list(self._tools.values())
 
     async def execute_tool_call(
-            self,
-            tool_call: ToolCall,
-            session: SessionProtocol | None = None,
+            self, tool_call: ToolCall, session: SessionProtocol | None = None,
         ) -> Any:
         if tool_call.nested_calls:
             return await _execute_nested_tool_call(tool_call, self, session)
@@ -582,8 +565,7 @@ _registry = ToolRegistry()
 
 
 def tool(
-        name: str,
-        description: str,
+        name: str, description: str,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to auto-register functions as tools."""
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:

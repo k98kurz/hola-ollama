@@ -19,9 +19,11 @@ specific potential issue that must be subjected to a dedicated review task.
 
 INITIAL_PLANNING_PROMPT_TEMPLATE = f"""{PLANNING_PROMPT_PREFIX}
 If creating a plan will be best done as a multi-step process, e.g. to create \
-related tasks in batches, create tasks for the PLANNING phase.
+related tasks in batches, create tasks for the PLANNING phase (which will be \
+run in a subsequent turn of the PLANNING phase with a fresh context).
 Once the tasks are created and no PLANNING phase tasks remain incomplete, the
-workflow will move to the EXECUTING phase, which .
+workflow will move to the EXECUTING phase, which will execute each task assigned \
+to the EXECUTING phase in order and with fresh context.
 
 <original_request>
 $request
