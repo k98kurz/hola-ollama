@@ -49,14 +49,16 @@ class ToolCallFunction:
 @validated_dataclass
 class ToolCall:
     function: ToolCallFunction
-    nested_calls: list[ToolCall] | None = None
     call_id: str = field(default_factory=make_call_id)
+    value: Any = field(default=None)
+    evaluated: bool = field(default=False)
 
     def pack(self) -> bytes:
         return packify.pack({
             'function': self.function,
-            'nested_calls': self.nested_calls,
             'call_id': self.call_id,
+            'value': self.value,
+            'evaluated': self.evaluated,
         })
 
     @classmethod

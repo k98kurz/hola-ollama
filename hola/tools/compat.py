@@ -85,7 +85,7 @@ def _get_example_value(param_type: str) -> str:
 
 
 TOOL_OPEN_PATTERN = re.compile(r'<tool\s+name="([^"]+)">', re.DOTALL)
-
+SELF_CLOSING_TOOL_PATTERN = re.compile(r'<tool\s+name="([^"]+)"\s*/>')
 TOOL_CLOSE_TAG = '</tool>'
 
 
@@ -96,7 +96,8 @@ def parse_tool_calls_from_xml(
     """Extract `ToolCall` objects from LLM output using lenient XML
         parsing. Returns a list of successfully parsed ToolCall objects,
         skipping malformed elements. Handles nested tool calls via
-        recursive parsing of parameter values.
+        monadic pattern where nested calls appear inline as parameter
+        values.
     """
     open_matches = list(TOOL_OPEN_PATTERN.finditer(xml_text))
 
@@ -154,7 +155,6 @@ def parse_tool_calls_from_xml(
 
     for tool_name, start_pos, end_pos, tool_content in top_level_tools:
         arguments: dict[str, Any] = {}
-        nested_calls: list[ToolCall] = []
 
         try:
             tool_wrapper = f"<tool_wrapper>{tool_content}</tool_wrapper>"
@@ -169,21 +169,32 @@ def parse_tool_calls_from_xml(
                     ET.tostring(child, encoding="unicode") for child in param_elem
                 )
 
+                param_value_inner = SELF_CLOSING_TOOL_PATTERN.sub(
+                    r'<tool name="\1"></tool>', param_value_inner
+                )
+
                 extracted_nested = handle_nested_calls(param_value_inner, tools)
                 if extracted_nested:
-                    nested_calls.extend(extracted_nested)
-
-                param_value_text = "".join(param_elem.itertext()).strip()
-                converted_value = convert_parameter_value(param_value_text)
-
-                if param_name in arguments:
-                    existing = arguments[param_name]
-                    if isinstance(existing, list):
-                        existing.append(converted_value)
+                    if param_name in arguments:
+                        existing = arguments[param_name]
+                        if isinstance(existing, list):
+                            existing.append(extracted_nested)
+                        else:
+                            arguments[param_name] = [existing, extracted_nested]
                     else:
-                        arguments[param_name] = [existing, converted_value]
+                        arguments[param_name] = extracted_nested
                 else:
-                    arguments[param_name] = converted_value
+                    param_value_text = "".join(param_elem.itertext()).strip()
+                    converted_value = convert_parameter_value(param_value_text)
+
+                    if param_name in arguments:
+                        existing = arguments[param_name]
+                        if isinstance(existing, list):
+                            existing.append(converted_value)
+                        else:
+                            arguments[param_name] = [existing, converted_value]
+                    else:
+                        arguments[param_name] = converted_value
         except ET.ParseError:
             pass
 
@@ -193,7 +204,6 @@ def parse_tool_calls_from_xml(
                     name=tool_name,
                     arguments=arguments,
                 ),
-                nested_calls=nested_calls if nested_calls else None,
             )
         )
 
@@ -225,58 +235,75 @@ def convert_parameter_value(value: str) -> int | float | bool | str:
 def handle_nested_calls(
         parameter_content: str,
         tools: list[ToolDefinition] | None
-    ) -> list[ToolCall]:
-    """Recursively parse nested `<tool>` elements in parameter content.
-        Returns a list of nested ToolCall objects found in the parameter
-        content, extracting parameters and recursively handling any
-        further nesting.
+    ) -> ToolCall | None:
+    """Parse a single nested `<tool>` element in parameter content.
+        Returns a ToolCall object if found, or None if no tool is present.
+        Handles recursive nested tool calls within the nested tool's
+        parameters.
     """
-    nested_calls: list[ToolCall] = []
+    parameter_content = SELF_CLOSING_TOOL_PATTERN.sub(
+        r'<tool name="\1"></tool>', parameter_content
+    )
 
-    open_matches = list(TOOL_OPEN_PATTERN.finditer(parameter_content))
+    open_match = TOOL_OPEN_PATTERN.search(parameter_content)
+    if not open_match:
+        return None
 
-    for open_match in open_matches:
-        tool_name = open_match.group(1)
-        start_pos = open_match.start()
+    tool_name = open_match.group(1)
+    if not tool_name:
+        return None
 
-        if not tool_name:
-            continue
+    start_pos = open_match.start()
+    depth = 1
+    search_pos = open_match.end()
 
-        depth = 1
-        search_pos = open_match.end()
+    while depth > 0 and search_pos < len(parameter_content):
+        next_open = TOOL_OPEN_PATTERN.search(parameter_content, search_pos)
+        next_close = parameter_content.find(TOOL_CLOSE_TAG, search_pos)
 
-        while depth > 0 and search_pos < len(parameter_content):
-            next_open = TOOL_OPEN_PATTERN.search(parameter_content, search_pos)
-            next_close = parameter_content.find(TOOL_CLOSE_TAG, search_pos)
+        if next_close == -1:
+            break
 
-            if next_close == -1:
+        if next_open and next_open.start() < next_close:
+            depth += 1
+            search_pos = next_open.end()
+        else:
+            depth -= 1
+            if depth == 0:
+                tool_content = parameter_content[open_match.end():next_close]
                 break
-
-            if next_open and next_open.start() < next_close:
-                depth += 1
-                search_pos = next_open.end()
             else:
-                depth -= 1
-                if depth == 0:
-                    tool_content = parameter_content[open_match.end():next_close]
-                    break
+                search_pos = next_close + len(TOOL_CLOSE_TAG)
+
+    if depth != 0:
+        return None
+
+    arguments: dict[str, Any] = {}
+
+    try:
+        tool_wrapper = f"<tool_wrapper>{tool_content}</tool_wrapper>"
+        tool_elem = ET.fromstring(tool_wrapper)
+
+        for param_elem in tool_elem.findall("parameter"):
+            param_name = param_elem.get("name")
+            if not param_name:
+                continue
+
+            param_value_inner = "".join(
+                ET.tostring(child, encoding="unicode") for child in param_elem
+            )
+
+            extracted_nested = handle_nested_calls(param_value_inner, tools)
+            if extracted_nested:
+                if param_name in arguments:
+                    existing = arguments[param_name]
+                    if isinstance(existing, list):
+                        existing.append(extracted_nested)
+                    else:
+                        arguments[param_name] = [existing, extracted_nested]
                 else:
-                    search_pos = next_close + len(TOOL_CLOSE_TAG)
-
-        if depth != 0:
-            continue
-
-        arguments: dict[str, Any] = {}
-
-        try:
-            tool_wrapper = f"<tool_wrapper>{tool_content}</tool_wrapper>"
-            tool_elem = ET.fromstring(tool_wrapper)
-
-            for param_elem in tool_elem.findall("parameter"):
-                param_name = param_elem.get("name")
-                if not param_name:
-                    continue
-
+                    arguments[param_name] = extracted_nested
+            else:
                 param_value_text = "".join(param_elem.itertext()).strip()
                 converted_value = convert_parameter_value(param_value_text)
 
@@ -288,17 +315,13 @@ def handle_nested_calls(
                         arguments[param_name] = [existing, converted_value]
                 else:
                     arguments[param_name] = converted_value
-        except ET.ParseError:
-            pass
 
-        nested_calls.append(
-            ToolCall(
-                function=ToolCallFunction(
-                    name=tool_name,
-                    arguments=arguments,
-                ),
-                nested_calls=None,
-            )
-        )
+    except Exception:
+        return None
 
-    return nested_calls
+    return ToolCall(
+        function=ToolCallFunction(
+            name=tool_name,
+            arguments=arguments,
+        ),
+    )

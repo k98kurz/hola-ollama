@@ -15,6 +15,7 @@ pip install -e .          # Install package for most manual testing
 
 - NEVER, under ANY CIRCUMSTANCES, run `git checkout` on a file. NEVER.
 - NEVER, under ANY CIRCUMSTANCES, run `git stash`. NEVER.
+- NEVER, under ANY CIRCUMSTANCES, run `git reset` or `git reset --hard`. NEVER.
 - When writing ephemeral test code, use a minimum number of print statements to
   conserve output tokens.
 - NEVER create sessions with `portable=False` in tests. ALWAYS use `portable=True`.

@@ -18,7 +18,6 @@ from hola.tools import (
 )
 from hola.tools.compat import (
     convert_parameter_value,
-    handle_nested_calls,
     parse_tool_calls_from_xml,
     tools_to_xml,
 )
@@ -283,8 +282,10 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        with self.assertRaises(ToolExecutionError):
+        with self.assertRaises(ToolExecutionError) as e:
             await execute_tool_call(tool_call)
+        assert "expected " in str(e.exception), e.exception
+        assert "got " in str(e.exception), e.exception
 
         @tool(name="test_tool_int", description="Test tool")
         def test_func_int(count: int) -> int:
@@ -297,8 +298,10 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        with self.assertRaises(ToolExecutionError):
+        with self.assertRaises(ToolExecutionError) as e:
             await execute_tool_call(tool_call)
+        assert "expected " in str(e.exception), e.exception
+        assert "got " in str(e.exception), e.exception
 
         @tool(name="test_tool_float", description="Test tool")
         def test_func_float(price: float) -> float:
@@ -311,8 +314,10 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        with self.assertRaises(ToolExecutionError):
+        with self.assertRaises(ToolExecutionError) as e:
             await execute_tool_call(tool_call)
+        assert "expected " in str(e.exception), e.exception
+        assert "got " in str(e.exception), e.exception
 
         @tool(name="test_tool_bool", description="Test tool")
         def test_func_bool(enabled: bool) -> bool:
@@ -327,6 +332,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ToolExecutionError):
             await execute_tool_call(tool_call)
+        assert "expected " in str(e.exception), e.exception
+        assert "got " in str(e.exception), e.exception
 
     async def test_error_scenarios(self):
         """Test not found, execution error, error wrapper, inner error
@@ -339,8 +346,9 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        with self.assertRaises(ToolExecutionError):
+        with self.assertRaises(ToolExecutionError) as e:
             await execute_tool_call(tool_call)
+        assert "Tool not found" in str(e.exception), e.exception
 
         @tool(name="failing_tool", description="Failing tool")
         def failing_func(x: int) -> int:
@@ -353,8 +361,9 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        with self.assertRaises(ToolExecutionError):
+        with self.assertRaises(ToolExecutionError) as e:
             await execute_tool_call(tool_call)
+        assert "Tool execution failed" in str(e.exception), e.exception
 
         @tool(name="inner", description="Inner tool")
         def inner_tool(x: int) -> int:
@@ -374,9 +383,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="outer",
-                arguments={},
+                arguments={"data": nested_call},
             ),
-            nested_calls=[nested_call],
         )
 
         result = await execute_tool_call(outer_call)
@@ -396,13 +404,14 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="outer",
-                arguments={},
+                arguments={"data": nested_call},
             ),
-            nested_calls=[nested_call],
         )
 
-        with self.assertRaises(ToolExecutionError):
+        with self.assertRaises(ToolExecutionError) as e:
             await execute_tool_call(outer_call)
+        assert "Tool execution failed" in str(e.exception), e.exception
+        assert "failing_inner" in str(e.exception), e.exception
 
         call1 = ToolCall(
             function=ToolCallFunction(
@@ -421,13 +430,13 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="outer",
-                arguments={},
+                arguments={"data": [call1, call2]},
             ),
-            nested_calls=[call1, call2],
         )
 
-        with self.assertRaises(ToolExecutionError):
+        with self.assertRaises(ToolExecutionError) as e:
             await execute_tool_call(outer_call)
+        assert "Invalid type for argument" in str(e.exception), e.exception
 
     async def test_nested_tool_call_single_level(self):
         """Test single level nested tool call."""
@@ -449,9 +458,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="outer",
-                arguments={},
+                arguments={"data": nested_call},
             ),
-            nested_calls=[nested_call],
         )
 
         result = await execute_tool_call(outer_call)
@@ -481,17 +489,15 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         call2 = ToolCall(
             function=ToolCallFunction(
                 name="level2",
-                arguments={},
+                arguments={"data": call1},
             ),
-            nested_calls=[call1],
         )
 
         call3 = ToolCall(
             function=ToolCallFunction(
                 name="level3",
-                arguments={},
+                arguments={"data": call2},
             ),
-            nested_calls=[call2],
         )
 
         result = await execute_tool_call(call3)
@@ -531,9 +537,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="sum_all",
-                arguments={},
+                arguments={"data": [call1, call2, call3]},
             ),
-            nested_calls=[call1, call2, call3],
         )
 
         result = await execute_tool_call(outer_call)
@@ -559,9 +564,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="outer_float",
-                arguments={},
+                arguments={"data": nested_call},
             ),
-            nested_calls=[nested_call],
         )
 
         result = await execute_tool_call(outer_call)
@@ -585,9 +589,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="outer_int",
-                arguments={},
+                arguments={"data": nested_call},
             ),
-            nested_calls=[nested_call],
         )
 
         result = await execute_tool_call(outer_call)
@@ -611,9 +614,8 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="outer_bool",
-                arguments={},
+                arguments={"data": nested_call},
             ),
-            nested_calls=[nested_call],
         )
 
         result = await execute_tool_call(outer_call)
@@ -646,17 +648,15 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         call2 = ToolCall(
             function=ToolCallFunction(
                 name="second",
-                arguments={},
+                arguments={"data": call1},
             ),
-            nested_calls=[call1],
         )
 
         call3 = ToolCall(
             function=ToolCallFunction(
                 name="third",
-                arguments={},
+                arguments={"data": call2},
             ),
-            nested_calls=[call2],
         )
 
         await execute_tool_call(call3)
@@ -691,27 +691,26 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="outer_tool",
-                arguments={"data": "test"},
+                arguments={
+                    "data": ToolCall(
+                        function=ToolCallFunction(
+                            name="inner_tool",
+                            arguments={"x": 5},
+                        ),
+                    ),
+                    "other": ToolCall(
+                        function=ToolCallFunction(
+                            name="another_inner",
+                            arguments={"y": 10},
+                        ),
+                    ),
+                },
             ),
-            nested_calls=[
-                ToolCall(
-                    function=ToolCallFunction(
-                        name="inner_tool",
-                        arguments={"x": 5},
-                    ),
-                ),
-                ToolCall(
-                    function=ToolCallFunction(
-                        name="another_inner",
-                        arguments={"y": 10},
-                    ),
-                ),
-            ],
         )
 
         original_outer_id = outer_call.call_id
-        original_inner_id = outer_call.nested_calls[0].call_id
-        original_another_id = outer_call.nested_calls[1].call_id
+        original_inner_id = outer_call.function.arguments["data"].call_id
+        original_another_id = outer_call.function.arguments["other"].call_id
 
         packed = packify.pack(outer_call)
         assert isinstance(packed, bytes), type(packed)
@@ -720,18 +719,77 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
 
         assert unpacked.call_id == original_outer_id, unpacked.call_id
         assert unpacked.function.name == "outer_tool", unpacked.function.name
-        assert unpacked.function.arguments == {
-            "data": "test"
-        }, unpacked.function.arguments
-        assert len(unpacked.nested_calls) == 2, len(unpacked.nested_calls)
-        assert unpacked.nested_calls[0].call_id == original_inner_id, (
-            unpacked.nested_calls[0].call_id)
-        assert unpacked.nested_calls[0].function.name == "inner_tool", (
-            unpacked.nested_calls[0].function.name)
-        assert unpacked.nested_calls[1].call_id == original_another_id, (
-            unpacked.nested_calls[1].call_id)
-        assert unpacked.nested_calls[1].function.name == "another_inner", (
-            unpacked.nested_calls[1].function.name)
+        assert "data" in unpacked.function.arguments, unpacked.function.arguments
+        assert "other" in unpacked.function.arguments, unpacked.function.arguments
+        assert unpacked.function.arguments["data"].call_id == original_inner_id, (
+            unpacked.function.arguments["data"].call_id)
+        assert unpacked.function.arguments["data"].function.name == "inner_tool", (
+            unpacked.function.arguments["data"].function.name)
+        assert unpacked.function.arguments["other"].call_id == original_another_id, (
+            unpacked.function.arguments["other"].call_id)
+        assert unpacked.function.arguments["other"].function.name == "another_inner", (
+            unpacked.function.arguments["other"].function.name)
+
+    async def test_e2e_nested_tool_calls_with_memory(self):
+        """End-to-end test with nested tool calls, memory interpolation, and
+            list parameters using direct ToolCall construction. Tests parsing,
+            interpolation, and execution together.
+        """
+        @tool(name="sum", description="Sum a list of numbers")
+        def sum_numbers(numbers: list[int]) -> int:
+            return sum(numbers)
+
+        @tool(name="get_number", description="Get a fixed number")
+        def get_number() -> int:
+            return 42
+
+        @tool(name="dummy", description="Dummy tool")
+        def dummy(does: str) -> str:
+            return does
+
+        session = Session("test_e2e_direct", portable=True)
+        session.memorize("numbers", [1, 2, 3])
+
+        inner_sum_memory = ToolCall(
+            function=ToolCallFunction(
+                name="sum",
+                arguments={"numbers": "${numbers}"},
+            ),
+        )
+
+        inner_get_number = ToolCall(
+            function=ToolCallFunction(
+                name="get_number",
+                arguments={},
+            ),
+        )
+
+        inner_sum_values = ToolCall(
+            function=ToolCallFunction(
+                name="sum",
+                arguments={"numbers": [1, 2, inner_get_number]},
+            ),
+        )
+
+        root_sum = ToolCall(
+            function=ToolCallFunction(
+                name="sum",
+                arguments={"numbers": [inner_sum_memory, inner_sum_values]},
+            ),
+        )
+
+        dummy_call = ToolCall(
+            function=ToolCallFunction(
+                name="dummy",
+                arguments={"does": "nothing"},
+            ),
+        )
+
+        result1 = await execute_tool_call(root_sum, session)
+        assert result1 == 51, result1
+
+        result2 = await execute_tool_call(dummy_call, session)
+        assert result2 == "nothing", result2
 
 
 class TestXMLCompatibility(unittest.TestCase):
@@ -986,10 +1044,11 @@ class TestXMLCompatibility(unittest.TestCase):
         tool_calls = parse_tool_calls_from_xml(xml_text)
         assert len(tool_calls) == 1, len(tool_calls)
         assert tool_calls[0].function.name == "outer"
-        assert tool_calls[0].nested_calls is not None
-        assert len(tool_calls[0].nested_calls) == 1
-        assert tool_calls[0].nested_calls[0].function.name == "inner"
-        assert tool_calls[0].nested_calls[0].function.arguments == {"x": 5}
+        assert "data" in tool_calls[0].function.arguments
+        nested_call = tool_calls[0].function.arguments["data"]
+        assert isinstance(nested_call, ToolCall), type(nested_call)
+        assert nested_call.function.name == "inner"
+        assert nested_call.function.arguments == {"x": 5}
 
     def test_parse_multiple_nested_calls(self):
         """Test parsing multiple nested tool calls."""
@@ -1006,14 +1065,21 @@ class TestXMLCompatibility(unittest.TestCase):
                 </tool>
             </parameter>
         </tool>
+        <tool name="another">
+            <parameter name="purpose">To prove it does not interfere.</parameter>
+        </tool>
         """
         tool_calls = parse_tool_calls_from_xml(xml_text)
-        assert len(tool_calls) == 1, len(tool_calls)
+        assert len(tool_calls) == 2, len(tool_calls)
         assert tool_calls[0].function.name == "outer"
-        assert tool_calls[0].nested_calls is not None
-        assert len(tool_calls[0].nested_calls) == 2
-        assert tool_calls[0].nested_calls[0].function.name == "inner1"
-        assert tool_calls[0].nested_calls[1].function.name == "inner2"
+        assert "data1" in tool_calls[0].function.arguments
+        assert "data2" in tool_calls[0].function.arguments
+        nested1 = tool_calls[0].function.arguments["data1"]
+        nested2 = tool_calls[0].function.arguments["data2"]
+        assert isinstance(nested1, ToolCall), type(nested1)
+        assert isinstance(nested2, ToolCall), type(nested2)
+        assert nested1.function.name == "inner1"
+        assert nested2.function.name == "inner2"
 
     def test_parse_no_nested_calls(self):
         """Test parsing tool calls without nested calls."""
@@ -1025,7 +1091,7 @@ class TestXMLCompatibility(unittest.TestCase):
         tool_calls = parse_tool_calls_from_xml(xml_text)
         assert len(tool_calls) == 1, len(tool_calls)
         assert tool_calls[0].function.name == "simple"
-        assert tool_calls[0].nested_calls is None
+        assert tool_calls[0].function.arguments == {"value": 42}
 
     def test_round_trip(self):
         """Test round-trip: ToolDefinition → XML → ToolCall."""
@@ -1074,11 +1140,11 @@ class TestXMLCompatibility(unittest.TestCase):
             return x * 2
 
         @tool(name="add_ten", description="Add ten")
-        def add_ten(data: int) -> int:
-            return data + 10
+        def add_ten(number: int) -> int:
+            return number + 10
         xml_text = """
         <tool name="add_ten">
-            <parameter name="data">
+            <parameter name="number">
                 <tool name="double">
                     <parameter name="x">5</parameter>
                 </tool>
@@ -1088,10 +1154,63 @@ class TestXMLCompatibility(unittest.TestCase):
         tool_calls = parse_tool_calls_from_xml(xml_text)
         assert len(tool_calls) == 1, len(tool_calls)
         assert tool_calls[0].function.name == "add_ten"
-        assert tool_calls[0].nested_calls is not None
-        assert len(tool_calls[0].nested_calls) == 1
+        assert "number" in tool_calls[0].function.arguments
+        nested_call = tool_calls[0].function.arguments["number"]
+        assert isinstance(nested_call, ToolCall), type(nested_call)
+        assert nested_call.function.name == "double"
         result = asyncio.run(execute_tool_call(tool_calls[0]))
         assert result == 20, result
+
+    def test_e2e_xml_nested_tool_calls_with_memory(self):
+        """End-to-end XML compatibility test with nested tool calls, memory
+            interpolation, and list parameters. Tests parsing, interpolation,
+            and execution together via XML.
+        """
+        @tool(name="sum", description="Sum a list of numbers")
+        def sum_numbers(numbers: list[int]) -> int:
+            return sum(numbers)
+
+        @tool(name="get_number", description="Get a fixed number")
+        def get_number() -> int:
+            return 42
+
+        @tool(name="dummy", description="Dummy tool")
+        def dummy(does: str) -> str:
+            return does
+
+        session = Session("test_e2e_xml", portable=True)
+        session.memorize("numbers", [1, 2, 3])
+
+        xml_text = """
+        <tool name="sum">
+            <parameter name="numbers">
+                <tool name="sum">
+                    <parameter name="numbers">${numbers}</parameter>
+                </tool>
+            </parameter>
+            <parameter name="numbers">
+                <tool name="sum">
+                    <parameter name="numbers">1</parameter>
+                    <parameter name="numbers">2</parameter>
+                    <parameter name="numbers">
+                        <tool name="get_number"></tool>
+                    </parameter>
+                </tool>
+            </parameter>
+        </tool>
+        <tool name="dummy">
+            <parameter name="does">nothing</parameter>
+        </tool>
+        """
+
+        tool_calls = parse_tool_calls_from_xml(xml_text)
+        assert len(tool_calls) == 2, len(tool_calls)
+
+        result1 = asyncio.run(execute_tool_call(tool_calls[0], session))
+        assert result1 == 51, result1
+
+        result2 = asyncio.run(execute_tool_call(tool_calls[1], session))
+        assert result2 == "nothing", result2
 
 
 class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
@@ -1268,9 +1387,8 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
         outer_call = ToolCall(
             function=ToolCallFunction(
                 name="add_ten",
-                arguments={},
+                arguments={"data": inner_call},
             ),
-            nested_calls=[inner_call],
         )
 
         result = await execute_tool_call(outer_call, self.session)

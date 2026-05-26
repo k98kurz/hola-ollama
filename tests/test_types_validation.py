@@ -162,22 +162,10 @@ class TestTypeValidation(unittest.TestCase):
 
     def test_nested_tool_calls_validation(self):
         """Test that nested tool_calls are validated."""
-        func = ToolCallFunction(name="inner", arguments={})
-        inner_tc = ToolCall(function=func)
-        outer_tc = ToolCall(function=func, nested_calls=[inner_tc])
-
-        assert outer_tc.nested_calls is not None
-        assert len(outer_tc.nested_calls) == 1
-        assert outer_tc.nested_calls[0] == inner_tc
-
-    def test_nested_tool_calls_wrong_type(self):
-        """Test that nested tool_calls rejects wrong types."""
-        func = ToolCallFunction(name="test", arguments={})
-        with self.assertRaises(TypeError) as ctx:
-            ToolCall(function=func, nested_calls=["not a tool call"])
-
-        assert "ToolCall.nested_calls" in str(ctx.exception)
-        assert "ToolCall" in str(ctx.exception)
+        inner_func = ToolCallFunction(name="inner", arguments={})
+        inner_tc = ToolCall(function=inner_func)
+        outer_func = ToolCallFunction(name="outer", arguments={"data":inner_tc})
+        outer_tc = ToolCall(function=outer_func)
 
 
 if __name__ == "__main__":
