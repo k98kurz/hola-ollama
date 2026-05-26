@@ -44,11 +44,9 @@ class TestTypeValidation(unittest.TestCase):
         msg = Message(
             role=Role.USER,
             content="hi",
-            tool_calls=None,
-            tool_name=None
+            tool_calls=None
         )
         assert msg.tool_calls is None
-        assert msg.tool_name is None
 
     def test_message_tool_calls_wrong_type(self):
         """Test that tool_calls must be list or None."""

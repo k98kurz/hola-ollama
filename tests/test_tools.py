@@ -2,9 +2,8 @@
 Tests for tool system functionality and XML compatibility layer.
 """
 
-import asyncio
-from unittest.mock import Mock, patch
-import unittest
+from pathlib import Path
+from hola.session.session import Session
 from hola.tools import (
     ToolRegistry,
     tool,
@@ -27,6 +26,10 @@ from hola.tools.core import (
     _interpolate_template,
     _interpolate_arguments,
 )
+import asyncio
+import shutil
+import unittest
+import packify
 
 
 class TestTools(unittest.IsolatedAsyncioTestCase):
@@ -326,7 +329,9 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             await execute_tool_call(tool_call)
 
     async def test_error_scenarios(self):
-        """Test not found, execution error, error wrapper, inner error propagation, multiple children error."""
+        """Test not found, execution error, error wrapper, inner error
+            propagation, multiple children error.
+        """
         tool_call = ToolCall(
             function=ToolCallFunction(
                 name="nonexistent_tool",
@@ -657,6 +662,76 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         await execute_tool_call(call3)
 
         assert execution_order == ["first", "second", "third"], execution_order
+
+    async def test_tool_call_auto_id_generation(self):
+        """Test that ToolCall objects automatically get unique call_ids."""
+        call1 = ToolCall(
+            function=ToolCallFunction(
+                name="read_file",
+                arguments={"path": "/tmp/file.txt"},
+            ),
+        )
+
+        call2 = ToolCall(
+            function=ToolCallFunction(
+                name="grep",
+                arguments={"pattern": "test"},
+            ),
+        )
+
+        assert call1.call_id is not None, call1.call_id
+        assert call2.call_id is not None, call2.call_id
+        assert call1.call_id.startswith("call_"), call1.call_id
+        assert call2.call_id.startswith("call_"), call2.call_id
+        assert len(call1.call_id) == 21, call1.call_id  # "call_" + 16 chars
+        assert len(call2.call_id) == 21, call2.call_id
+        assert call1.call_id != call2.call_id, f"{call1.call_id} == {call2.call_id}"
+
+    async def test_tool_call_pack_unpack_nested(self):
+        outer_call = ToolCall(
+            function=ToolCallFunction(
+                name="outer_tool",
+                arguments={"data": "test"},
+            ),
+            nested_calls=[
+                ToolCall(
+                    function=ToolCallFunction(
+                        name="inner_tool",
+                        arguments={"x": 5},
+                    ),
+                ),
+                ToolCall(
+                    function=ToolCallFunction(
+                        name="another_inner",
+                        arguments={"y": 10},
+                    ),
+                ),
+            ],
+        )
+
+        original_outer_id = outer_call.call_id
+        original_inner_id = outer_call.nested_calls[0].call_id
+        original_another_id = outer_call.nested_calls[1].call_id
+
+        packed = packify.pack(outer_call)
+        assert isinstance(packed, bytes), type(packed)
+
+        unpacked = packify.unpack(packed, inject={**globals()})
+
+        assert unpacked.call_id == original_outer_id, unpacked.call_id
+        assert unpacked.function.name == "outer_tool", unpacked.function.name
+        assert unpacked.function.arguments == {
+            "data": "test"
+        }, unpacked.function.arguments
+        assert len(unpacked.nested_calls) == 2, len(unpacked.nested_calls)
+        assert unpacked.nested_calls[0].call_id == original_inner_id, (
+            unpacked.nested_calls[0].call_id)
+        assert unpacked.nested_calls[0].function.name == "inner_tool", (
+            unpacked.nested_calls[0].function.name)
+        assert unpacked.nested_calls[1].call_id == original_another_id, (
+            unpacked.nested_calls[1].call_id)
+        assert unpacked.nested_calls[1].function.name == "another_inner", (
+            unpacked.nested_calls[1].function.name)
 
 
 class TestXMLCompatibility(unittest.TestCase):
@@ -1023,59 +1098,53 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
     """Test cases for template interpolation with session memories."""
     def setUp(self):
         """Set up test fixtures."""
-        self.registry = ToolRegistry()
-
         @tool(name="echo", description="Echo a message")
         def echo(message: str) -> str:
             return message
 
-        self.session = Mock()
-        self.session.recall = Mock()
+        self.session = Session("test_template_interpolation", portable=True)
+
+    def tearDown(self):
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
 
     async def test_basic_interpolation(self):
         """Test simple key interpolation."""
-        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+        self.session.memorize("name", "Alice")
 
         result = _interpolate_template("Hello ${name}", self.session)
         assert result == "Hello Alice", result
 
     async def test_integer_value_conversion(self):
         """Test that integer values are converted to strings."""
-        self.session.recall.side_effect = lambda key: 25 if key == "age" else None
+        self.session.memorize("age", 25)
 
         result = _interpolate_template("Age: ${age}", self.session)
         assert result == "Age: 25", result
 
     async def test_dot_notation_dict(self):
         """Test dot notation for nested dictionary access."""
-        self.session.recall.side_effect = lambda key: (
-            {"name": "Bob"} if key == "user" else None
-        )
+        self.session.memorize("user", {"name": "Bob"})
 
         result = _interpolate_template("User: ${user.name}", self.session)
         assert result == "User: Bob", result
 
     async def test_list_indexing(self):
         """Test list indexing with bracket notation."""
-        self.session.recall.side_effect = lambda key: (
-            ["Alice", "Bob"] if key == "users" else None
-        )
+        self.session.memorize("users", ["Alice", "Bob"])
 
         result = _interpolate_template("First: ${users[0]}", self.session)
         assert result == "First: Alice", result
 
     async def test_nested_list_access(self):
         """Test nested list and dict access."""
-        self.session.recall.side_effect = lambda key: (
-            {
-                "friends": [
-                    {"name": "Alice", "id": "123"},
-                    {"name": "Bob", "id": "456"},
-                ]
-            }
-            if key == "user"
-            else None
-        )
+        self.session.memorize("user", {
+             "friends": [
+                 {"name": "Alice", "id": "123"},
+                 {"name": "Bob", "id": "456"},
+             ]
+        })
 
         result = _interpolate_template(
             "Friend: ${user.friends[0].name}, ID: ${user.friends[0].id}",
@@ -1085,10 +1154,8 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_multiple_interpolations(self):
         """Test multiple interpolations in one string."""
-        self.session.recall.side_effect = lambda key: {
-            "name": "Alice",
-            "age": 25,
-        }.get(key)
+        self.session.memorize("name", "Alice")
+        self.session.memorize("age", 25)
 
         result = _interpolate_template(
             "Hello ${name}, age ${age}", self.session
@@ -1097,8 +1164,6 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_key_error(self):
         """Test that missing keys raise ToolExecutionError."""
-        self.session.recall.return_value = None
-
         with self.assertRaises(ToolExecutionError) as cm:
             _interpolate_template("Hello ${missing}", self.session)
 
@@ -1106,7 +1171,7 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_nested_path_error(self):
         """Test error on invalid nested path."""
-        self.session.recall.side_effect = lambda key: {"name": "Alice"} if key == "user" else None
+        self.session.memorize("user", {"name": "Alice"})
 
         with self.assertRaises(ToolExecutionError) as cm:
             _interpolate_template("${user.invalid}", self.session)
@@ -1115,7 +1180,7 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_out_of_range_error(self):
         """Test error when list index is out of range."""
-        self.session.recall.side_effect = lambda key: ["Alice"] if key == "users" else None
+        self.session.memorize("users", ["Alice"])
 
         with self.assertRaises(ToolExecutionError) as cm:
             _interpolate_template("${users[5]}", self.session)
@@ -1124,36 +1189,27 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_backslash_escaping(self):
         """Test backslash escaping of template syntax."""
-        self.session.recall.return_value = None
-
         result = _interpolate_template(r"Literal \${name}", self.session)
         assert result == "Literal ${name}", result
 
-    async def test_dollar_before_interpolation(self):
+    async def test_dollar_signs_before_interpolation(self):
         """Test dollar signs before interpolation."""
-        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+        self.session.memorize("name", "Alice")
 
         result = _interpolate_template("$${name}", self.session)
         assert result == "$Alice", result
-
-    async def test_double_dollar_before_interpolation(self):
-        """Test double dollar signs before interpolation."""
-        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
-
         result = _interpolate_template("$$${name}", self.session)
         assert result == "$$Alice", result
 
     async def test_non_string_arguments_unchanged(self):
         """Test that non-string arguments remain unchanged."""
-        self.session.recall.return_value = None
-
         args = {"x": 123, "y": True, "z": 3.14}
         result = _interpolate_arguments(args, self.session)
         assert result == args, result
 
     async def test_list_argument_interpolation(self):
         """Test interpolation in list arguments."""
-        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+        self.session.memorize("name", "Alice")
 
         args = {"data": [1, "${name}", 3]}
         result = _interpolate_arguments(args, self.session)
@@ -1161,7 +1217,7 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_dict_argument_interpolation(self):
         """Test interpolation in dict arguments."""
-        self.session.recall.side_effect = lambda key: "value" if key == "key" else None
+        self.session.memorize("key", "value")
 
         args = {"nested": {"x": "${key}", "y": 1}}
         result = _interpolate_arguments(args, self.session)
@@ -1178,7 +1234,7 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
         def greet(name: str) -> str:
             return f"Hello {name}"
 
-        self.session.recall.side_effect = lambda key: "Alice" if key == "name" else None
+        self.session.memorize("name", "Alice")
 
         tool_call = ToolCall(
             function=ToolCallFunction(
@@ -1200,7 +1256,7 @@ class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):
         def add_ten(data: int) -> int:
             return data + 10
 
-        self.session.recall.side_effect = lambda key: "5" if key == "value" else None
+        self.session.memorize("value", "5")
 
         inner_call = ToolCall(
             function=ToolCallFunction(
@@ -1225,8 +1281,6 @@ class TestSessionParameterInjection(unittest.IsolatedAsyncioTestCase):
     """Test cases for session parameter injection in tool execution."""
     def setUp(self):
         """Set up test fixtures."""
-        from hola.session.session import Session
-
         @tool(name="no_session", description="Tool without session")
         def no_session_tool(x: int) -> int:
             return x * 2
@@ -1243,12 +1297,10 @@ class TestSessionParameterInjection(unittest.IsolatedAsyncioTestCase):
 
     async def test_session_injection_works(self):
         """Test session is injected and accessible in tools."""
-        from hola.session.session import Session
-
-        session = Session("test_injection", portable=False)
+        session = Session("test_injection", portable=True)
         session.delete()
 
-        session = Session("test_injection", portable=False)
+        session = Session("test_injection", portable=True)
 
         call1 = ToolCall(
             function=ToolCallFunction(

@@ -151,7 +151,6 @@ class OllamaClient:
                         if "tool_calls" in data["message"]
                         else None
                     ),
-                    tool_name=data["message"].get("tool_name"),
                     thinking=data["message"].get("thinking"),
                 ),
                 done=data["done"],
@@ -391,9 +390,6 @@ class OllamaClient:
                 self._serialize_tool_call(tc) for tc in message.tool_calls
             ]
 
-        if message.tool_name is not None:
-            result["tool_name"] = message.tool_name
-
         return result
 
     def _serialize_tool(self, tool) -> dict:
@@ -471,7 +467,6 @@ class OllamaClient:
                 role=Role(message_data.get("role", "assistant")),
                 content=message_data.get("content"),
                 tool_calls=tool_calls,
-                tool_name=message_data.get("tool_name"),
                 thinking=message_data.get("thinking"),
             ),
             done=data["done"],

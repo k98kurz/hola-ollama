@@ -14,8 +14,10 @@ pip install -e .          # Install package for most manual testing
 # Testing & Building Convention
 
 - NEVER, under ANY CIRCUMSTANCES, run `git checkout` on a file. NEVER.
+- NEVER, under ANY CIRCUMSTANCES, run `git stash`. NEVER.
 - When writing ephemeral test code, use a minimum number of print statements to
   conserve output tokens.
+- NEVER create sessions with `portable=False` in tests. ALWAYS use `portable=True`.
 - Use the temp/ directory in the project for temporary files.
 - When testing ollama anything, use granite4.1:3b as the model.
 - For the Build agent: you MUST use todo.md to track your work for anything non-trivial

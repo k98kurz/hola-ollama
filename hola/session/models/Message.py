@@ -1,6 +1,7 @@
 from enum import Enum
 from sqloquent import SqlModel, Default, RelatedModel
 from hola.types import Role
+from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
 import packify
 
 
@@ -47,7 +48,10 @@ class Message(SqlModel):
         """Return the deserialized message details dictionary. Can be set
             using the setter to serialize and store a new dictionary.
         """
-        return packify.unpack(self.data.get('details', None) or _empty)
+        return packify.unpack(
+            self.data.get('details', None) or _empty,
+            inject={**globals()}
+        )
 
     @details.setter
     def details(self, val: packify.SerializableType) -> None:

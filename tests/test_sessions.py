@@ -22,7 +22,7 @@ from hola.session.exceptions import (
 )
 from hola.session.manager import _generate_session_id
 from hola.session.storage import initialize
-from hola.types import Message as OMessage, Role
+from hola.types import Message as OMessage, Role, ToolCall, ToolCallFunction
 import os
 import shutil
 import time
@@ -295,6 +295,55 @@ class TestSessionDataStorage(unittest.TestCase):
 
         history = self.session.get_history()
         assert len(history) == 9, len(history)
+
+    def test_messages_with_tool_calls(self):
+        """Test storing and retrieving messages with tool calls."""
+        call1 = ToolCall(
+            function=ToolCallFunction(
+                name="memorize",
+                arguments={
+                    "key": "file.txt",
+                    "value": ToolCall(
+                        function=ToolCallFunction(
+                            name="read_file",
+                            arguments={"path": "/tmp/file.txt"},
+                        ),
+                    )
+                }
+            )
+        )
+        call2 = ToolCall(
+            function=ToolCallFunction(
+                name="grep",
+                arguments={"pattern": "test"},
+            ),
+        )
+
+        msg = OMessage(
+            role=Role.ASSISTANT,
+            content="I'll help you with that",
+            tool_calls=[call1, call2],
+        )
+
+        self.session.add_message("granite4.1:3b", msg)
+
+        history = self.session.get_history()
+        assert len(history) == 1, len(history)
+        assert history[0][0] == "granite4.1:3b", history[0][0]
+        retrieved_msg = history[0][1]
+        assert retrieved_msg.content == "I'll help you with that", retrieved_msg.content
+        assert retrieved_msg.tool_calls is not None, retrieved_msg.tool_calls
+        assert len(retrieved_msg.tool_calls) == 2, len(retrieved_msg.tool_calls)
+        assert retrieved_msg.tool_calls[0].function.name == "memorize", (
+            retrieved_msg.tool_calls[0].function.name)
+        assert retrieved_msg.tool_calls[0].function.arguments.get(
+            "key"
+        ) == "file.txt", retrieved_msg.tool_calls[0].function.arguments
+        assert retrieved_msg.tool_calls[1].function.name == "grep", (
+            retrieved_msg.tool_calls[1].function.name)
+        assert retrieved_msg.tool_calls[1].function.arguments == {
+            "pattern": "test"
+        }, retrieved_msg.tool_calls[1].function.arguments
 
     def test_messages_filtering(self):
         """Test message history filtering by limit and model."""

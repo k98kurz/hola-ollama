@@ -40,7 +40,6 @@ def tool_enabled_chat_adapter(
         role=m.role,
         content=m.content,
         tool_calls=m.tool_calls,
-        tool_name=m.tool_name,
         thinking=m.thinking,
     ) for m in messages if m.role.value != 'system']
 
@@ -82,7 +81,6 @@ def xml_workaround_chat_adapter(
         role=m.role,
         content=m.content,
         tool_calls=m.tool_calls,
-        tool_name=m.tool_name,
         thinking=m.thinking,
     ) for m in messages if m.role.value != 'system']
 

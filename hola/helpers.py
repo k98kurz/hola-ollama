@@ -1,4 +1,5 @@
 from hashlib import sha256
+import secrets
 
 
 def extract_words(description: str) -> list[str]:
@@ -18,3 +19,14 @@ def get_memory_key(description: str) -> str:
     slug = '_'.join(words[:4])
     checksum = hash_hex(description)
     return f"task_{slug}_{checksum}_notes"
+
+
+def random_b62(length: int) -> str:
+    """Generate random chars in base 62 charset."""
+    alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    return "".join([secrets.choice(alphabet) for _ in range(length)])
+
+
+def make_call_id(length: int = 16) -> str:
+    """Generate a base 62 call ID."""
+    return "call_" + random_b62(length)

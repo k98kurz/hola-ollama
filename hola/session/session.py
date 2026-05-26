@@ -131,10 +131,7 @@ class Session:
             'content': message.content,
             'thinking': message.thinking,
         })
-        m.details = {
-            'tool_name': message.tool_name,
-            'tool_calls': message.tool_calls,
-        }
+        m.details = {'tool_calls': message.tool_calls}
         m.save()
 
     def get_history(
@@ -146,7 +143,10 @@ class Session:
             sqb.equal('model', model)
 
         msgs = [
-            (m.model, OMessage(m.role, m.content, thinking=m.thinking))
+            (m.model, OMessage(
+                m.role, m.content, thinking=m.thinking,
+                tool_calls=m.details.get('tool_calls')
+            ))
             for m in sqb.take(limit)
         ]
         msgs.reverse()

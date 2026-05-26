@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Protocol, runtime_checkable
 from hola.errors import validated_dataclass
-from hola.tools.types import ToolCall, ToolDefinition
+from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
 
 
 __all__ = [
@@ -35,7 +35,6 @@ class Message:
     role: Role
     content: str
     tool_calls: list[ToolCall] | None = None
-    tool_name: str | None = None
     thinking: str | None = None
 
 
