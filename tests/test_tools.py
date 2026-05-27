@@ -21,6 +21,7 @@ from hola.tools.compat import (
     parse_tool_calls_from_xml,
     tools_to_xml,
     tool_calls_to_xml,
+    process_assistant_message,
 )
 from hola.tools.core import (
     _interpolate_template,
@@ -1252,15 +1253,19 @@ class TestXMLCompatibility(unittest.TestCase):
         assert '<tool name="get_number"' in xml, xml
         assert '<parameter name="numbers">1</parameter>' in xml, xml
         assert '<parameter name="numbers">2</parameter>' in xml, xml
-        assert '<parameter name="numbers">\n        <tool name="get_number"' in xml, xml
+        substr = '<parameter name="numbers">\n        <tool name="get_number"'
+        assert substr in xml, xml
 
         xml_empty = tool_calls_to_xml(nested_call)
         assert f'call_id="{nested_call.call_id}"' in xml_empty, xml_empty
-        assert xml_empty == f'<tool name="get_number" call_id="{nested_call.call_id}"></tool>', xml_empty
+        assert xml_empty == (f'<tool name="get_number" call_id="'
+            f'{nested_call.call_id}"></tool>'), xml_empty
         assert '\n' not in xml_empty, xml_empty
 
     def test_serialize_and_parse_multiple_with_call_ids(self):
-        """Test serializing multiple tool calls and parser ignores call_id attributes."""
+        """Test serializing multiple tool calls and parser ignores
+            call_id attributes.
+        """
         call1 = ToolCall(
             function=ToolCallFunction(
                 name="get_number",
@@ -1295,9 +1300,15 @@ class TestXMLCompatibility(unittest.TestCase):
         assert parsed_calls[1].call_id != call2.call_id, parsed_calls[1].call_id
         assert parsed_calls[2].call_id != call3.call_id, parsed_calls[2].call_id
 
-        assert parsed_calls[0].function.name == "get_number", parsed_calls[0].function.name
-        assert parsed_calls[1].function.name == "sum", parsed_calls[1].function.name
-        assert parsed_calls[2].function.name == "greet", parsed_calls[2].function.name
+        assert parsed_calls[0].function.name == "get_number", (
+            parsed_calls[0].function.name
+        )
+        assert parsed_calls[1].function.name == "sum", (
+            parsed_calls[1].function.name
+        )
+        assert parsed_calls[2].function.name == "greet", (
+            parsed_calls[2].function.name
+        )
 
     def test_serialize_parse_roundtrip_with_nested_calls(self):
         """Test serializing nested tool call to XML and parsing it back."""
@@ -1344,6 +1355,108 @@ class TestXMLCompatibility(unittest.TestCase):
 
         assert parsed_outer.call_id != outer_call.call_id, parsed_outer.call_id
         assert parsed_inner.call_id != inner_call.call_id, parsed_inner.call_id
+
+    def test_process_assistant_message_single_tool(self):
+        """Test processing message with single tool call."""
+        content = ("I'll search for that.\n<tool name=\"search\"><parameter "
+            "name=\"query\">cats</parameter></tool>")
+        modified, tool_calls = process_assistant_message(content)
+
+        assert "[Tool call intercepted" in modified, modified
+        assert "I'll search for that." in modified, modified
+        assert "<tool name=\"search\" call_id=" in modified, modified
+        assert "[Tool calls]" in modified, modified
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "search", tool_calls[0].function.name
+        assert tool_calls[0].function.arguments == {"query": "cats"}
+
+    def test_process_assistant_message_multiple_tools(self):
+        """Test processing message with multiple tool calls."""
+        content = ("I'll search and sum.\n<tool name=\"search\"><parameter "
+            "name=\"query\">cats</parameter></tool>\n<tool name=\"sum\">"
+            "<parameter name=\"numbers\">1</parameter><parameter name=\"numbers\">"
+            "2</parameter><parameter name=\"numbers\">3</parameter></tool>")
+        modified, tool_calls = process_assistant_message(content)
+
+        assert "I'll search and sum." in modified, modified
+        assert "[Tool call intercepted" in modified, modified
+        assert modified.count("[Tool call intercepted") == 2, modified.count("[Tool call intercepted")
+        assert "[Tool calls]" in modified, modified
+        assert "call_id=\"call_" in modified, modified
+        assert len(tool_calls) == 2, len(tool_calls)
+        assert tool_calls[0].function.name == "search", tool_calls[0].function.name
+        assert tool_calls[1].function.name == "sum", tool_calls[1].function.name
+
+    def test_process_assistant_message_nested_tool(self):
+        """Test processing message with nested tool call."""
+        content = ("I'll chain tools.\n<tool name=\"outer\"><parameter name="
+            "\"data\">\n<tool name=\"inner\"><parameter name=\"x\">5</parameter>"
+            "</tool>\n</parameter></tool>")
+        modified, tool_calls = process_assistant_message(content)
+
+        assert "I'll chain tools." in modified, modified
+        assert "[Tool call intercepted" in modified, modified
+        assert modified.count("[Tool call intercepted") == 1, (
+            modified.count("[Tool call intercepted")
+        )
+        assert "[Tool calls]" in modified, modified
+        assert "call_id=\"call_" in modified, modified
+        assert len(tool_calls) == 1, len(tool_calls)
+        assert tool_calls[0].function.name == "outer", tool_calls[0].function.name
+        assert "data" in tool_calls[0].function.arguments
+        nested_call = tool_calls[0].function.arguments["data"]
+        assert isinstance(nested_call, ToolCall), type(nested_call)
+        assert nested_call.function.name == "inner", nested_call.function.name
+
+    def test_process_assistant_message_no_tools(self):
+        """Test processing message with no tool calls."""
+        content = "This is just a regular message with no tools."
+        modified, tool_calls = process_assistant_message(content)
+
+        assert modified == content, modified
+        assert len(tool_calls) == 0, len(tool_calls)
+        assert "[Tool calls]" not in modified, modified
+
+    def test_process_assistant_message_text_before_between_after(self):
+        """Test processing message with text before, between, and after tools."""
+        content = ("Start.\n<tool name=\"search\"><parameter name=\"query\">"
+            "cats</parameter></tool>\nMiddle.\n<tool name=\"sum\"><parameter "
+            "name=\"numbers\">1</parameter><parameter name=\"numbers\">2"
+            "</parameter></tool>\nEnd.")
+        modified, tool_calls = process_assistant_message(content)
+
+        assert "Start." in modified, modified
+        assert "Middle." in modified, modified
+        assert "End." in modified, modified
+        assert "[Tool call intercepted" in modified, modified
+        assert "[Tool calls]" in modified, modified
+        assert len(tool_calls) == 2, len(tool_calls)
+
+    def test_process_assistant_message_empty_message(self):
+        """Test processing empty message."""
+        content = ""
+        modified, tool_calls = process_assistant_message(content)
+
+        assert modified == "", modified
+        assert len(tool_calls) == 0, len(tool_calls)
+
+    def test_process_assistant_message_roundtrip(self):
+        """Test roundtrip: original → process → parse again → same structure."""
+        original_content = ("Searching.\n<tool name=\"search\"><parameter name="
+            "\"query\">cats</parameter></tool>")
+        modified_content, original_tool_calls = process_assistant_message(
+            original_content
+        )
+
+        reparsed_calls = parse_tool_calls_from_xml(modified_content)
+
+        assert len(reparsed_calls) == len(original_tool_calls), (
+            len(reparsed_calls), len(original_tool_calls)
+        )
+        rc = reparsed_calls[0]
+        otc = original_tool_calls[0]
+        assert rc.function.name == otc.function.name, (rc, otc)
+        assert rc.function.arguments == otc.function.arguments, (rc, otc)
 
 
 class TestTemplateInterpolation(unittest.IsolatedAsyncioTestCase):

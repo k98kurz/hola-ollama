@@ -93,6 +93,63 @@ SELF_CLOSING_TOOL_PATTERN = re.compile(
 TOOL_CLOSE_TAG = '</tool>'
 
 
+def _find_tool_positions(xml_text: str) -> list[tuple[int, int]]:
+    """Find start and end positions of all top-level tool tags in text.
+        Returns list of (start_pos, end_pos) tuples sorted by position.
+        Does not include nested tool tags - only top-level tools.
+    """
+    open_matches = list(TOOL_OPEN_PATTERN.finditer(xml_text))
+
+    all_tool_info: list[tuple[int, int]] = []
+
+    for open_match in open_matches:
+        tool_name = open_match.group(1)
+        start_pos = open_match.start()
+
+        if not tool_name:
+            continue
+
+        depth = 1
+        search_pos = open_match.end()
+
+        while depth > 0 and search_pos < len(xml_text):
+            next_open = TOOL_OPEN_PATTERN.search(xml_text, search_pos)
+            next_close = xml_text.find(TOOL_CLOSE_TAG, search_pos)
+
+            if next_close == -1:
+                break
+
+            if next_open and next_open.start() < next_close:
+                depth += 1
+                search_pos = next_open.end()
+            else:
+                depth -= 1
+                if depth == 0:
+                    end_pos = next_close + len(TOOL_CLOSE_TAG)
+                    all_tool_info.append((start_pos, end_pos))
+                    break
+                else:
+                    search_pos = next_close + len(TOOL_CLOSE_TAG)
+
+    all_tool_info.sort(key=lambda x: x[0])
+
+    top_level_tools: list[tuple[int, int]] = []
+
+    for i, (start_pos, end_pos) in enumerate(all_tool_info):
+        is_nested = False
+        for j, (other_start, other_end) in enumerate(all_tool_info):
+            if i == j:
+                continue
+            if start_pos > other_start and end_pos < other_end:
+                is_nested = True
+                break
+
+        if not is_nested:
+            top_level_tools.append((start_pos, end_pos))
+
+    return top_level_tools
+
+
 def parse_tool_calls_from_xml(
         xml_text: str,
         tools: list[ToolDefinition] | None = None
@@ -409,3 +466,37 @@ def tool_calls_to_xml(
         return _serialize_tool_call(tool_calls, indent, 0)
 
     return "\n".join(_serialize_tool_call(tc, indent, 0) for tc in tool_calls)
+
+
+def process_assistant_message(
+        content: str,
+        tools: list[ToolDefinition] | None = None
+    ) -> tuple[str, list[ToolCall]]:
+    """Process LLM assistant message by extracting tool calls, replacing them
+        with a notice, and appending serialized XML with call_ids. Returns
+        (modified_content, tool_calls_with_call_ids). This prevents the LLM
+        from hallucinating call_ids while maintaining proper tool call tracking.
+    """
+    tool_calls = parse_tool_calls_from_xml(content, tools)
+
+    if not tool_calls:
+        return content, tool_calls
+
+    tool_positions = _find_tool_positions(content)
+
+    placeholder = "[Tool call intercepted and processed by harness. See below for tool call with call_id assigned by the system.]"
+
+    content_parts = list(content)
+    offset = 0
+
+    for start_pos, end_pos in reversed(tool_positions):
+        actual_start = start_pos
+        actual_end = end_pos
+        content_parts[actual_start:actual_end] = [placeholder]
+
+    modified_content = "".join(content_parts)
+
+    serialized_tools = tool_calls_to_xml(tool_calls)
+    modified_content += f"\n\n[Tool calls]\n{serialized_tools}"
+
+    return modified_content, tool_calls
