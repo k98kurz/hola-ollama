@@ -84,8 +84,12 @@ def _get_example_value(param_type: str) -> str:
     return examples.get(param_type, '"example"')
 
 
-TOOL_OPEN_PATTERN = re.compile(r'<tool\s+name="([^"]+)">', re.DOTALL)
-SELF_CLOSING_TOOL_PATTERN = re.compile(r'<tool\s+name="([^"]+)"\s*/>')
+TOOL_OPEN_PATTERN = re.compile(
+    r'<tool\s+name="([^"]+)"(?:\s+call_id="([^"]+)")?>', re.DOTALL
+)
+SELF_CLOSING_TOOL_PATTERN = re.compile(
+    r'<tool\s+name="([^"]+)"(?:\s+call_id="([^"]+)")?\s*/>'
+)
 TOOL_CLOSE_TAG = '</tool>'
 
 
@@ -325,3 +329,83 @@ def handle_nested_calls(
             arguments=arguments,
         ),
     )
+
+
+def _serialize_value(value: Any, indent: str, depth: int) -> str:
+    """Serialize a value for XML parameter element."""
+    if isinstance(value, ToolCall):
+        return _serialize_tool_call(value, indent, depth + 1)
+    elif isinstance(value, str):
+        return value
+    elif isinstance(value, list):
+        items = [_serialize_value(item, indent, depth) for item in value]
+        return "\n".join(items)
+    elif isinstance(value, dict):
+        return str(value)
+    else:
+        return str(value)
+
+
+def _serialize_tool_call(tool_call: ToolCall, indent: str, depth: int) -> str:
+    """Recursively serialize a ToolCall to XML with call_id attribute."""
+    tool_name = tool_call.function.name
+    call_id = tool_call.call_id
+    arguments = tool_call.function.arguments
+
+    prefix = indent * depth
+    if not arguments:
+        return f'{prefix}<tool name="{tool_name}" call_id="{call_id}"></tool>'
+
+    inner_prefix = indent * (depth + 1)
+
+    parts = [f'{prefix}<tool name="{tool_name}" call_id="{call_id}">']
+
+    for param_name, param_value in arguments.items():
+        value_str = _serialize_value(param_value, indent, depth + 1)
+
+        if isinstance(param_value, list) and len(param_value) > 1:
+            if any(isinstance(item, ToolCall) for item in param_value):
+                for item in param_value:
+                    item_str = _serialize_value(item, indent, depth + 1)
+                    if '<tool' in item_str:
+                        parts.append(f'{inner_prefix}<parameter name="{param_name}">')
+                        parts.append(item_str)
+                        parts.append(f'{inner_prefix}</parameter>')
+                    else:
+                        parts.append(
+                            f'{inner_prefix}<parameter name="{param_name}">'
+                            f'{item_str}</parameter>'
+                        )
+            else:
+                for item in param_value:
+                    parts.append(
+                        f'{inner_prefix}<parameter name="{param_name}">{item}'
+                        '</parameter>'
+                    )
+        elif '<tool' in value_str:
+            parts.append(f'{inner_prefix}<parameter name="{param_name}">')
+            parts.append(value_str)
+            parts.append(f'{inner_prefix}</parameter>')
+        else:
+            parts.append(
+                f'{inner_prefix}<parameter name="{param_name}">{value_str}'
+                '</parameter>'
+            )
+
+    parts.append(f'{prefix}</tool>')
+
+    return "\n".join(parts)
+
+
+def tool_calls_to_xml(
+        tool_calls: list[ToolCall] | ToolCall,
+        indent: str = "    ",
+    ) -> str:
+    """Serialize ToolCall objects to XML with call_id attributes.
+        Handles nested tool calls recursively. Returns XML string
+        that can be embedded in Message content.
+    """
+    if isinstance(tool_calls, ToolCall):
+        return _serialize_tool_call(tool_calls, indent, 0)
+
+    return "\n".join(_serialize_tool_call(tc, indent, 0) for tc in tool_calls)
