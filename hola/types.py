@@ -206,18 +206,10 @@ class LLMClient(Protocol):
         """Supports both streaming and non-streaming based on request.stream."""
         ...
 
-    def chat_sync(self, request: ChatRequest) -> ChatResponse:
-        """Non-streaming chat response from the model."""
-        ...
-
     async def generate(
             self, request: GenerateRequest
         ) -> AsyncGenerator[GenerateChunk, None] | GenerateResponse:
         """Supports both streaming and non-streaming based on request.stream."""
-        ...
-
-    def generate_sync(self, request: GenerateRequest) -> GenerateResponse:
-        """Non-streaming text generation from the model."""
         ...
 
     async def list_models(self) -> list[ModelInfo]:

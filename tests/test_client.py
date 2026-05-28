@@ -2,12 +2,7 @@
 Tests for OllamaClient functionality.
 """
 
-import asyncio
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
-import unittest
-import logging
-import httpx
 from hola.cache import AsyncLRUCache
 from hola.ollama.client import OllamaClient, model_info_cache
 from hola.ollama.config import ClientConfig
@@ -32,6 +27,10 @@ from hola.types import (
     ModelInfo,
     ModelMetadata,
 )
+import asyncio
+import logging
+import unittest
+import httpx
 
 
 class TestClient(unittest.IsolatedAsyncioTestCase):
@@ -157,198 +156,28 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
 
             assert chunks[-1].done, chunks[-1].done
 
-    async def test_sync_operations(self):
-        for request_type, request_class, mock_json in [
-                ("chat", ChatRequest, {
-                    "model": "qwen3:0.6b",
-                    "message": {
-                        "role": "assistant",
-                        "content": "Hello world",
-                        "thinking": "I should greet the user."
-                    },
-                    "done": True,
-                    "total_duration": 1000000000,
-                }),
-                ("generate", GenerateRequest, {
-                    "model": "qwen3:0.6b",
-                    "response": "Hello world",
-                    "done": True,
-                    "total_duration": 1000000000,
-                }),
-            ]:
-            if request_type == "chat":
-                request = ChatRequest(
-                    model="qwen3:0.6b",
-                    messages=[Message(role=Role.USER, content="test")],
-                )
-            else:
-                request = GenerateRequest(
-                    model="qwen3:0.6b",
-                    prompt="test",
-                )
-
-            mock_response = MagicMock()
-            mock_response.json.return_value = mock_json
-
-            async def mock_post(*args, **kwargs):
-                return mock_response
-
-            client = OllamaClient()
-            client._client.post = mock_post
-
-            if request_type == "chat":
-                def run_sync():
-                    return client.chat_sync(request)
-
-                response = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    run_sync,
-                )
-
-                assert response.model == "qwen3:0.6b", (
-                    response.model,
-                    "qwen3:0.6b",
-                )
-                assert response.message.content == "Hello world", (
-                    response.message.content,
-                    "Hello world",
-                )
-                assert response.message.thinking == "I should greet the user.", (
-                    response.message.thinking,
-                    "I should greet the user.",
-                )
-            else:
-                def run_sync():
-                    return client.generate_sync(request)
-
-                response = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    run_sync,
-                )
-
-                assert response.model == "qwen3:0.6b", (
-                    response.model,
-                    "qwen3:0.6b",
-                )
-                assert response.response == "Hello world", (
-                    response.response,
-                    "Hello world",
-                )
-
-            await client.close()
-
-    async def test_load_model(self):
-        mock_response = Mock()
-        with patch.object(
-            self.client._client,
-            'post',
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ) as mock_post:
-            await self.client.load_model("granite4.1:3b")
-
-            mock_post.assert_called_once()
-            call_kwargs = mock_post.call_args.kwargs
-            assert call_kwargs["json"]["model"] == "granite4.1:3b", (
-                call_kwargs["json"]["model"],
-                "granite4.1:3b",
-            )
-
-    async def test_unload_model(self):
-        mock_response = Mock()
-        with patch.object(
-            self.client._client,
-            'post',
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ) as mock_post:
-            await self.client.unload_model("granite4.1:3b")
-
-            mock_post.assert_called_once()
-            call_kwargs = mock_post.call_args.kwargs
-            assert call_kwargs["json"]["keep_alive"] == "0", (
-                call_kwargs["json"]["keep_alive"],
-                "0",
-            )
-
     async def test_list_models(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "models": [
-                {
-                    "name": "granite4.1:3b:latest",
-                    "modified_at": "2024-01-01T00:00:00Z",
-                    "size": 4000000000,
-                    "digest": "abc123",
-                },
-            ],
-        }
+        models = await self.client.list_models()
 
-        with patch.object(
-            self.client._client,
-            'get',
-            new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.return_value = mock_response
+        assert len(models), len(models)
+        assert all([type(m) is ModelInfo for m in models]), models
 
-            models = await self.client.list_models()
-
-            assert len(models) == 1, len(models)
-            assert models[0].name == "granite4.1:3b:latest", (
-                models[0].name,
-                "granite4.1:3b:latest",
-            )
-
-    async def test_list_running_models(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "models": [
-                {
-                    "name": "granite4.1:3b",
-                    "expires_at": "2024-01-01T01:00:00Z",
-                    "size": 4000000000,
-                    "vm_peak": 8000000000,
-                    "vram_total": 8000000000,
-                },
-            ],
-        }
-
-        with patch.object(
-            self.client._client,
-            'get',
-            new_callable=AsyncMock,
-        ) as mock_get:
-            mock_get.return_value = mock_response
-
-            models = await self.client.list_running_models()
-
-            assert len(models) == 1, len(models)
-            assert models[0].name == "granite4.1:3b", (
-                models[0].name,
-                "granite4.1:3b",
-            )
+    async def test_load_model_list_running_models_unload_model_e2e(self):
+        await self.client.load_model("qwen3:0.6b")
+        models = await self.client.list_running_models()
+        assert len(models) > 0, len(models)
+        assert all([type(m) is RunningModel for m in models]), models
+        assert any([m.name == "qwen3:0.6b" for m in models]), models
+        await self.client.unload_model("qwen3:0.6b")
+        await asyncio.sleep(1)
+        models = await self.client.list_running_models()
+        assert not any([m.name == "qwen3:0.6b" for m in models]), models
 
     async def test_http_status_error(self):
         request = ChatRequest(
-            model="granite4.1:3b",
+            model="nonexistentmodel",
             messages=[Message(role=Role.USER, content="test")],
         )
-
-        class MockStreamContext:
-            def __init__(self):
-                self.status_code = 404
-
-            async def __aenter__(self):
-                raise httpx.HTTPStatusError(
-                    "Not Found",
-                    request=Mock(),
-                    response=self,
-                )
-
-            async def __aexit__(self, *args):
-                pass
-
-        self.client._client.stream = Mock(return_value=MockStreamContext())
 
         with self.assertRaises(OllamaRequestError):
             async for _ in await self.client.chat(request):
@@ -401,35 +230,15 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             await self.client.unload_model(model_name)
 
     async def test_thinking_field_none_when_not_present(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "model": "granite4.1:3b",
-            "message": {
-                "role": "assistant",
-                "content": "Hello",
-            },
-            "done": True,
-            "total_duration": 1000000000,
-        }
-
-        async def mock_post(*args, **kwargs):
-            return mock_response
-
         client = OllamaClient()
-        client._client.post = mock_post
 
         request = ChatRequest(
             model="granite4.1:3b",
             messages=[Message(role=Role.USER, content="test")],
+            stream=False,
         )
 
-        def run_sync():
-            return client.chat_sync(request)
-
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            run_sync,
-        )
+        response = await client.chat(request)
 
         assert response.message.thinking is None, (
             response.message.thinking,

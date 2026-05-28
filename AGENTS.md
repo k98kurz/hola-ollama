@@ -19,6 +19,8 @@ pip install -e .          # Install package for most manual testing
 - When writing ephemeral test code, use a minimum number of print statements to
   conserve output tokens.
 - NEVER create sessions with `portable=False` in tests. ALWAYS use `portable=True`.
+- NO MOCKS. We want to prove that things actually work, not that we can pretend that
+  they work. I'm sick of stupid mocks obscuring broken code.
 - Use the temp/ directory in the project for temporary files.
 - When testing ollama anything, use granite4.1:3b as the model.
 - For the Build agent: you MUST use todo.md to track your work for anything non-trivial

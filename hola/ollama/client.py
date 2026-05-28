@@ -162,21 +162,6 @@ class OllamaClient:
                 output_duration=data.get("eval_duration"),
             )
 
-    def chat_sync(self, request: ChatRequest) -> ChatResponse:
-        """Non-streaming convenience wrapper."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop is not None:
-            raise RuntimeError(
-                "chat_sync cannot be called from within an "
-                "async context. Use the async chat() method instead."
-            )
-
-        return asyncio.run(self._chat_nonstream(request))
-
     async def generate(
             self, request: GenerateRequest
         ) -> AsyncGenerator[GenerateChunk, None] | GenerateResponse:
@@ -227,21 +212,6 @@ class OllamaClient:
                 output_tokens=data.get("eval_count"),
                 output_duration=data.get("eval_duration"),
             )
-
-    def generate_sync(self, request: GenerateRequest) -> GenerateResponse:
-        """Non-streaming generate convenience wrapper."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop is not None:
-            raise RuntimeError(
-                "generate_sync cannot be called from within an "
-                "async context. Use the async generate() method instead."
-            )
-
-        return asyncio.run(self._generate_nonstream(request))
 
     async def load_model(self, model: str, keep_alive: str = "24h") -> None:
         """Explicit model load."""
