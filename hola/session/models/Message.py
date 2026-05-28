@@ -17,18 +17,21 @@ class Message(SqlModel):
     id_column: str = 'id'
     columns: tuple[str,] = (
         'id', 'session_id', 'sequence', 'role', 'model', 'phase', 'call_id',
-        'content', 'thinking', 'compacted_by', 'details'
+        'estimated_tokens', 'tokens', 'content', 'thinking', 'compacted_by',
+        'details'
     )
     id: str
     session_id: str
     sequence: int
     role: str | Default['user']
     model: str | None
-    phase: str | None = None
+    phase: str | None
     call_id: str | None
+    estimated_tokens: int | Default[0]
+    tokens: int | Default[0]
     content: str
-    thinking: str | None = None
-    compacted_by: str | None = None
+    thinking: str | None
+    compacted_by: str | None
     details: bytes | None
     session: RelatedModel
 

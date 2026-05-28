@@ -59,6 +59,18 @@ class SessionProtocol(Protocol):
         """Get effective permission for a path."""
         ...
 
+    def set_token_baseline(self, phase: str, tokens: int) -> None:
+        """Sets the token baseline for a given phase. Used in context
+            management.
+        """
+        ...
+
+    def get_token_baseline(self, phase: str) -> None:
+        """Gets the token baseline for a given phase. Used in context
+            management.
+        """
+        ...
+
     def memorize(self, key: str, value: object) -> None:
         """Store a key-value pair in session memory."""
         ...

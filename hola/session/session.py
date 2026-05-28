@@ -118,7 +118,9 @@ class Session:
             last_task = Task.query().equal('session_id', self.session_id).equal(
                 'phase', row.data['phase']
             ).order_by('sequence', 'desc').first()
-            self.task_sequences[row.data['phase']] = last_task.sequence if last_task else 0
+            self.task_sequences[row.data['phase']] = 0
+            if last_task:
+                self.task_sequences[row.data['phase']] = last_task.sequence
 
     def add_message(self, model: str, message: OMessage) -> None:
         """Add a message to conversation history."""
@@ -130,8 +132,10 @@ class Session:
             'model': model,
             'content': message.content,
             'thinking': message.thinking,
+            'estimated_tokens': len(message.content) // 4,
         })
         m.details = {'tool_calls': message.tool_calls}
+        m.estimated_tokens += len(m.data['details']) // 4
         m.save()
 
     def get_history(
@@ -169,6 +173,7 @@ class Session:
             'call_id': call_id,
         })
         m.details = {'result': result}
+        m.estimated_tokens = len(m.data.get('details')) // 4
         m.save()
 
     def get_tool_output(self, call_id: str) -> object | None:
@@ -282,6 +287,22 @@ class Session:
                 del config[k]
         self.dbsession.config = config
         self.dbsession.save()
+
+    def set_token_baseline(self, phase: str, tokens: int) -> None:
+        """Sets the token baseline for a given phase. Used in context
+            management.
+        """
+        if 'token_baselines' not in self.state.context:
+            self.state.context['token_baselines'] = {}
+        self.state.context['token_baselines'][phase] = tokens
+        self.save_fsm_data()
+
+    def get_token_baseline(self, phase: str) -> None:
+        """Gets the token baseline for a given phase. Used in context
+            management.
+        """
+        token_baselines = self.state.context.get('token_baselines', {})
+        return token_baselines.get(phase)
 
     def memorize(self, key: str, value: object) -> None:
         """Memorize a key-value pair."""
@@ -697,6 +718,8 @@ class Session:
     def accept(self) -> None:
         """Mark the workflow as accepted by the reviewer agent."""
         self.state.context['status'] = 'accepted'
+        if 'reject_reason' in self.state.context:
+            del self.state.context['reject_reason']
         self.save_fsm_data()
 
     def reject(self, reason: str) -> None:
