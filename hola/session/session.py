@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 from hola.helpers import get_memory_key
 from hola.permissions import Permission
+from hola.prompts.compaction import estimate_tokens
 from hola.session.exceptions import (
     SessionDeleteError,
     SessionError,
@@ -122,7 +123,10 @@ class Session:
             if last_task:
                 self.task_sequences[row.data['phase']] = last_task.sequence
 
-    def add_message(self, model: str, message: OMessage) -> None:
+    def add_message(
+            self, model: str, phase: str, message: OMessage,
+            is_compaction: bool = False,
+        ) -> None:
         """Add a message to conversation history."""
         self.sequence += 2
         m = DBMessage({
@@ -130,37 +134,72 @@ class Session:
             'sequence': self.sequence,
             'role': message.role.value,
             'model': model,
+            'phase': phase,
             'content': message.content,
             'thinking': message.thinking,
-            'estimated_tokens': len(message.content) // 4,
+            'is_compaction': is_compaction,
         })
         m.details = {'tool_calls': message.tool_calls}
-        m.estimated_tokens += len(m.data['details']) // 4
+        m.estimated_tokens = estimate_tokens(m)
         m.save()
 
     def get_history(
-            self, model: str | None = None, limit: int = 10,
+            self, phase: str = None, model: str | None = None, limit: int = None,
+            only_since_last_compaction: bool = True
         ) -> list[tuple[str, OMessage]]:
-        """Get conversation history, optionally filtered by model."""
+        """Get conversation history, optionally filtered by phase and
+            model. `only_since_last_compaction` is only effective if
+            `phase` is provided; by default, if `phase` is provided,
+            `only_since_last_compaction` should be True and should
+            return the most recent compaction for the phase and the
+            messages that followed.
+        """
         sqb = self.dbsession.messages().query().order_by('sequence', 'desc')
+        last_compaction = None
         if model is not None:
             sqb.equal('model', model)
+        if phase is not None:
+            sqb.equal('phase', phase)
+            if only_since_last_compaction:
+                sqb2 = self.dbsession.messages().query()
+                sqb2.equal('phase', phase).order_by('sequence', 'desc')
+                if model is not None:
+                    sqb2.equal('model', model)
+                last_compaction = sqb2.equal('is_compaction', True).first()
+                if last_compaction:
+                    sqb.greater('sequence', last_compaction.sequence)
+
+        results = sqb.take(limit) if limit else sqb.get()
+        if last_compaction:
+            results.append(last_compaction)
 
         msgs = [
             (m.model, OMessage(
                 m.role, m.content, thinking=m.thinking,
-                tool_calls=m.details.get('tool_calls')
+                tool_calls=m.details.get('tool_calls'),
+                tokens=m.tokens, estimated_tokens=m.estimated_tokens,
             ))
-            for m in sqb.take(limit)
+            for m in results
         ]
         msgs.reverse()
         return msgs
 
-    def clear_history(self) -> None:
-        """Clear conversation history."""
+    def clear_history(
+            self, phase: str | None = None, after_sequence: int | None = None
+        ) -> None:
+        """Clear conversation history, optionally only for a specific
+            phase or beyond a specific sequence number.
+        """
         sqb = self.dbsession.messages().query()
+        if phase:
+            sqb.equal('phase', phase)
+        if after_sequence is not None:
+            sqb.greater('sequence', after_sequence)
         sqb.delete()
-        self.sequence = 0
+        if phase is None and after_sequence is None:
+            self.sequence = 0
+        elif phase is None:
+            self.sequence = after_sequence
 
     def add_tool_output(self, call_id: str, result: object) -> None:
         """Set tool output by call ID. Stored as Message with Role.TOOL."""
@@ -173,7 +212,7 @@ class Session:
             'call_id': call_id,
         })
         m.details = {'result': result}
-        m.estimated_tokens = len(m.data.get('details')) // 4
+        m.estimated_tokens = estimate_tokens(m)
         m.save()
 
     def get_tool_output(self, call_id: str) -> object | None:
@@ -297,12 +336,12 @@ class Session:
         self.state.context['token_baselines'][phase] = tokens
         self.save_fsm_data()
 
-    def get_token_baseline(self, phase: str) -> None:
+    def get_token_baseline(self, phase: str) -> int:
         """Gets the token baseline for a given phase. Used in context
             management.
         """
         token_baselines = self.state.context.get('token_baselines', {})
-        return token_baselines.get(phase)
+        return token_baselines.get(phase, 0)
 
     def memorize(self, key: str, value: object) -> None:
         """Memorize a key-value pair."""

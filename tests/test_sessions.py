@@ -271,17 +271,19 @@ class TestSessionDataStorage(unittest.TestCase):
     def test_messages_crud(self):
         """Test message add, get, list, delete operations."""
         msg = OMessage(role=Role.USER, content="Hello")
-        self.session.add_message("granite4.1:3b", msg)
+        self.session.add_message("granite4.1:3b", "INIT", msg)
 
         history = self.session.get_history()
         assert len(history) == 1, len(history)
         assert history[0][0] == "granite4.1:3b", history[0][0]
         assert history[0][1].content == "Hello", history[0][1].content
+        assert history[0][1].tokens == 0, history[0][1].tokens
+        assert history[0][1].estimated_tokens > 0, history[0][1].estimated_tokens
 
         initial_seq = self.session.sequence
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role=Role.USER, content=str(i))
+                "granite4.1:3b", "INIT", OMessage(role=Role.USER, content=str(i))
             )
         assert self.session.sequence == initial_seq + 10, self.session.sequence
 
@@ -291,7 +293,7 @@ class TestSessionDataStorage(unittest.TestCase):
             OMessage(role=Role.USER, content="How are you?"),
         ]
         for msg in msgs:
-            self.session.add_message("granite4.1:3b", msg)
+            self.session.add_message("granite4.1:3b", "INIT", msg)
 
         history = self.session.get_history()
         assert len(history) == 9, len(history)
@@ -325,13 +327,14 @@ class TestSessionDataStorage(unittest.TestCase):
             tool_calls=[call1, call2],
         )
 
-        self.session.add_message("granite4.1:3b", msg)
+        self.session.add_message("granite4.1:3b", "INIT", msg)
 
         history = self.session.get_history()
         assert len(history) == 1, len(history)
         assert history[0][0] == "granite4.1:3b", history[0][0]
         retrieved_msg = history[0][1]
-        assert retrieved_msg.content == "I'll help you with that", retrieved_msg.content
+        assert retrieved_msg.content == "I'll help you with that", (
+            retrieved_msg.content)
         assert retrieved_msg.tool_calls is not None, retrieved_msg.tool_calls
         assert len(retrieved_msg.tool_calls) == 2, len(retrieved_msg.tool_calls)
         assert retrieved_msg.tool_calls[0].function.name == "memorize", (
@@ -346,10 +349,30 @@ class TestSessionDataStorage(unittest.TestCase):
         }, retrieved_msg.tool_calls[1].function.arguments
 
     def test_messages_filtering(self):
-        """Test message history filtering by limit and model."""
+        """Test message history filtering by limit, model, and phase."""
+        for i in range(5):
+            self.session.add_message(
+                "granite4.1:3b", "EXECUTING",
+                OMessage(role=Role.USER, content=f"Exec {i}")
+            )
+            self.session.add_message(
+                "granite4.1:3b", "PLANNING",
+                OMessage(role=Role.USER, content=f"Plan {i}")
+            )
+
+        exec_history = self.session.get_history(phase='EXECUTING')
+        assert len(exec_history) == 5, (
+            f"Expected 5 EXECUTING messages, got {len(exec_history)}")
+        plan_history = self.session.get_history(phase='PLANNING')
+        assert len(plan_history) == 5, (
+            f"Expected 5 PLANNING messages, got {len(plan_history)}")
+
+        filtered = self.session.get_history(phase='EXECUTING', limit=2)
+        assert len(filtered) == 2, f"Expected 2 messages, got {len(filtered)}"
+
         for i in range(20):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role=Role.USER, content=str(i))
+                "granite4.1:3b", "INIT", OMessage(role=Role.USER, content=str(i))
             )
 
         history = self.session.get_history(limit=5)
@@ -358,17 +381,17 @@ class TestSessionDataStorage(unittest.TestCase):
         for i in range(10):
             model = "model_a" if i % 2 == 0 else "model_b"
             self.session.add_message(
-                model, OMessage(role=Role.USER, content=str(i))
+                model, "INIT", OMessage(role=Role.USER, content=str(i))
             )
 
-        history_a = self.session.get_history(model="model_a")
-        history_b = self.session.get_history(model="model_b")
+        history_a = self.session.get_history(phase='INIT', model="model_a")
+        history_b = self.session.get_history(phase='INIT', model="model_b")
         assert len(history_a) == 5, len(history_a)
         assert len(history_b) == 5, len(history_b)
 
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role=Role.USER, content=f"Msg {i}")
+                "granite4.1:3b", "INIT", OMessage(role=Role.USER, content=f"Msg {i}")
             )
 
         history = self.session.get_history()
@@ -529,7 +552,7 @@ class TestSessionDataStorage(unittest.TestCase):
         """Test clearing history and resetting sequence."""
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", OMessage(role=Role.USER, content=str(i))
+                "granite4.1:3b", "INIT", OMessage(role=Role.USER, content=str(i))
             )
 
         self.session.clear_history()
@@ -537,6 +560,89 @@ class TestSessionDataStorage(unittest.TestCase):
 
         assert len(history) == 0, len(history)
         assert self.session.sequence == 0, self.session.sequence
+
+        self.session.add_message(
+            "granite4.1:3b", "INIT",
+            OMessage(role=Role.USER, content="Keep this")
+        )
+        self.session.add_message(
+            "granite4.1:3b", "EXECUTING",
+            OMessage(role=Role.USER, content="Clear this")
+        )
+
+        self.session.clear_history(phase='EXECUTING')
+        history = self.session.get_history()
+        assert len(history) == 1, f"Expected 1, got {len(history)}"
+        assert history[0][1].content == "Keep this", "Wrong message remained"
+
+        seq_before = self.session.sequence
+        self.session.add_message(
+            "granite4.1:3b", "INIT",
+            OMessage(role=Role.USER, content="New")
+        )
+        self.session.clear_history(after_sequence=seq_before)
+        history = self.session.get_history()
+        assert len(history) == 1
+        assert self.session.sequence != 0
+
+    def test_compaction_aware_history(self):
+        """Test compaction-aware history retrieval."""
+        self.session.add_message(
+            "granite4.1:3b", "PLANNING",
+            OMessage(role=Role.ASSISTANT, content="Lalala clanking up a plan")
+        )
+        for i in range(3):
+            self.session.add_message(
+                "granite4.1:3b", "EXECUTING",
+                OMessage(role=Role.USER, content=f"Before compaction {i}")
+            )
+
+        self.session.add_message(
+            "granite4.1:3b", "EXECUTING",
+            OMessage(role=Role.SYSTEM, content="Summary of previous messages"),
+            is_compaction=True
+        )
+
+        for i in range(2):
+            self.session.add_message(
+                "granite4.1:3b", "EXECUTING",
+                OMessage(role=Role.USER, content=f"After compaction {i}")
+            )
+
+        history = self.session.get_history(
+            phase='EXECUTING', only_since_last_compaction=True
+        )
+        assert len(history) == 3, len(history)
+        assert history[0][1].content == "Summary of previous messages"
+        assert history[1][1].content == "After compaction 0"
+        assert history[2][1].content == "After compaction 1"
+
+        assert isinstance(history[0], tuple)
+        assert len(history[0]) == 2
+        assert history[0][0] == "granite4.1:3b"
+        assert isinstance(history[0][1], OMessage)
+
+        history_all = self.session.get_history(
+            phase='EXECUTING', only_since_last_compaction=False
+        )
+        assert len(history_all) == 6, len(history_all)
+
+        history_no_phase = self.session.get_history()
+        assert len(history_no_phase) == 7, len(history_no_phase)
+
+    def test_token_baseline_methods(self):
+        """Test token baseline set/get behavior including edge cases."""
+        self.session.set_token_baseline("EXECUTING", 2048)
+        baseline = self.session.get_token_baseline("EXECUTING")
+        assert baseline == 2048, baseline
+
+        self.session.set_token_baseline("PLANNING", 4096)
+        baseline = self.session.get_token_baseline("PLANNING")
+        assert baseline == 4096, baseline
+
+        self.session.set_token_baseline("EXECUTING", 1024)
+        baseline = self.session.get_token_baseline("EXECUTING")
+        assert baseline == 1024, baseline
 
 
 class TestSessionFSMData(unittest.TestCase):
@@ -663,7 +769,7 @@ class TestSessionIntegration(unittest.TestCase):
         retrieved_session = get_session(session_id, portable=True)
 
         retrieved_session.add_message(
-            "granite4.1:3b", OMessage(role=Role.USER, content="Hello")
+            "granite4.1:3b", "INIT", OMessage(role=Role.USER, content="Hello")
         )
         retrieved_session.memorize("name", "TestUser")
         retrieved_session.set_metadata("version", "1.0")
@@ -690,7 +796,7 @@ class TestSessionIntegration(unittest.TestCase):
 
         session = Session("mixed_test", portable=True)
         session.add_message(
-            "granite4.1:3b", OMessage(role=Role.USER, content="Hello")
+            "granite4.1:3b", "INIT", OMessage(role=Role.USER, content="Hello")
         )
         session.create_temp_file("data.txt", "temp data")
 

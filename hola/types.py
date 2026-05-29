@@ -36,6 +36,8 @@ class Message:
     content: str
     tool_calls: list[ToolCall] | None = None
     thinking: str | None = None
+    tokens: int = 0
+    estimated_tokens: int = 0
 
 
 class SessionProtocol(Protocol):
@@ -55,6 +57,27 @@ class SessionProtocol(Protocol):
         """Access the session config."""
         ...
 
+    def get_history(
+            self, phase: str = None, model: str | None = None, limit: int = None,
+            only_since_last_compaction: bool = True
+        ) -> list[tuple[str, Message]]:
+        """Get conversation history, optionally filtered by phase and
+            model. `only_since_last_compaction` is only effective if
+            `phase` is provided; by default, if `phase` is provided,
+            `only_since_last_compaction` should be True and should
+            return the most recent compaction for the phase and the
+            messages that followed.
+        """
+        ...
+
+    def clear_history(
+            self, phase: str | None = None, after_sequence: int | None = None
+        ) -> None:
+        """Clear conversation history, optionally only for a specific
+            phase or beyond a specific sequence number.
+        """
+        ...
+
     def get_file_permission(self, path: Path | str) -> Permission:
         """Get effective permission for a path."""
         ...
@@ -65,7 +88,7 @@ class SessionProtocol(Protocol):
         """
         ...
 
-    def get_token_baseline(self, phase: str) -> None:
+    def get_token_baseline(self, phase: str) -> int:
         """Gets the token baseline for a given phase. Used in context
             management.
         """

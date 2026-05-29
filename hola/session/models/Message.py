@@ -18,7 +18,7 @@ class Message(SqlModel):
     columns: tuple[str,] = (
         'id', 'session_id', 'sequence', 'role', 'model', 'phase', 'call_id',
         'estimated_tokens', 'tokens', 'content', 'thinking', 'compacted_by',
-        'details'
+        'is_compaction', 'details'
     )
     id: str
     session_id: str
@@ -32,6 +32,7 @@ class Message(SqlModel):
     content: str
     thinking: str | None
     compacted_by: str | None
+    is_compaction: bool | Default[False]
     details: bytes | None
     session: RelatedModel
 
