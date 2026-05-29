@@ -31,6 +31,7 @@ pip install -e .          # Install package for most manual testing
   - Once something is done, REMOVE IT from todo.md; do NOT fill the file with
     self-congratulatory notes
   - When continuing after a recent compaction, read todo.md to stay on task
+  - ALWAYS read todo.md BEFORE writing to it; use the EDIT tool
 - If you encounter anything requiring a major change in plans, stop and discuss
 - Do not worry about backwards compatibility; this project is under development,
   incomplete, and has never been used anywhere.
@@ -63,6 +64,7 @@ knowledge maintained by the user.
 - Soft max of 80 for normal lines
 - Hard max of 85 for code and 72 for docstrings
 - NO dangling whitespace
+- Use scripts/linechecker.py
 
 ## Annotations
 

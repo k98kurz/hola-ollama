@@ -95,3 +95,15 @@ SELF_CLOSING_TOOL_PATTERN = re.compile(
 ```
 
 This ensures consistent parsing regardless of how XML was generated or transformed.
+
+## Context Size Tracking
+
+- The `ChatResponse.prompt_tokens` contains the number of tokens processed before response generation began
+- The DB Message model has `tokens` and `estimated_tokens` columns for tracking the tokens used by each message
+- Each phase of a workflow starts with a single system message that is not stored in the database
+- The harness will read the `prompt_tokens` from the first request as a baseline
+- Construct a running tally by adding the baseline to the sum of the `tokens` fields from all persisted messages
+- Set `estimated_tokens` in `session.add_message` and `session.add_tool_output`
+- Each subsequent turn within the phase, subtract the running tally from the `prompt_tokens` and set the last message `tokens` field to that difference, then save the new message from the response
+- Thus, each db `message.tokens` field is 0 until it has been processed as part of the prompt
+- In the cast that multiple messages saved to the database in the same phase do not have `tokens` assigned, assign proportional to the `estimated_tokens` such that the sum of the new `tokens` values across those messages equals the difference calculated from the API response and cumulative tally
