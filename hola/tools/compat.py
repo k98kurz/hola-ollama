@@ -486,15 +486,14 @@ def process_assistant_message(
 
     placeholder = "[Tool call intercepted and processed by harness. See below for tool call with call_id assigned by the system.]"
 
-    content_parts = list(content)
-    offset = 0
-
-    for start_pos, end_pos in reversed(tool_positions):
-        actual_start = start_pos
-        actual_end = end_pos
-        content_parts[actual_start:actual_end] = [placeholder]
-
-    modified_content = "".join(content_parts)
+    parts = []
+    cursor = 0
+    for start_pos, end_pos in tool_positions:
+        parts.append(content[cursor:start_pos])
+        parts.append(placeholder)
+        cursor = end_pos
+    parts.append(content[cursor:])
+    modified_content = "".join(parts)
 
     serialized_tools = tool_calls_to_xml(tool_calls)
     modified_content += f"\n\n[Tool calls]\n{serialized_tools}"

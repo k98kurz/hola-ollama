@@ -8,11 +8,11 @@ local Ollama service. This is a library, not an application.
 
 ```bash
 source venv/bin/activate  # REQUIRED before ALL Python commands
-pip install -e .          # Install package for most manual testing
 ```
 
 # Testing & Building Convention
 
+- NEVER, under ANY CIRCUMSTANCES, run `pip install` on ANYTHING. NEVER.
 - NEVER, under ANY CIRCUMSTANCES, run `git checkout` on a file. NEVER.
 - NEVER, under ANY CIRCUMSTANCES, run `git stash`. NEVER.
 - NEVER, under ANY CIRCUMSTANCES, run `git reset` or `git reset --hard`. NEVER.

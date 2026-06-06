@@ -254,6 +254,6 @@ PromptGenerator = Callable[
 ]
 
 Adapter = Callable[
-    [list[Message], list[ToolDefinition]],
+    [str, list[Message], list[ToolDefinition], str, str | None],
     ChatRequest | GenerateRequest
 ]

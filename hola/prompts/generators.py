@@ -40,7 +40,7 @@ $request
 $task
 </task>"""
 
-PLANNING_FINALIZATION_PROMPT_TEMPALTE = f"""{PLANNING_PROMPT_PREFIX}
+PLANNING_FINALIZATION_PROMPT_TEMPLATE = f"""{PLANNING_PROMPT_PREFIX}
 All PLANNING phase tasks have been completed. Finalize the plan so the EXECUTING \
 phase can begin working. If no further changes are necessary to the existing \
 plan, halt so the workflow can transition to the next phase.
@@ -50,7 +50,7 @@ $request
 </original_request>"""
 
 
-EXECUTING_PROMPT_TEMPLTAE = """You are a workflow execution agent. You have been \
+EXECUTING_PROMPT_TEMPLATE = """You are a workflow execution agent. You have been \
 assigned a specific task in furtherance of fulfilling a request. You must focus \
 on completing your assigned task and nothing else.
 Any details for the task can be accessed using `memorize` and `recall` tools with \
@@ -201,10 +201,10 @@ def generate_planning_task_prompt(**kwargs) -> str:
 
 
 def generate_planning_finalization_prompt(**kwargs) -> str:
-    """Generate initial prompt for PLANNING phase."""
+    """Generate finalizaion prompt for PLANNING phase."""
     template = kwargs.get(
         'planning_finalization_prompt_template',
-        PLANNING_FINALIZATION_PROMPT_TEMPALTE
+        PLANNING_FINALIZATION_PROMPT_TEMPLATE
     )
     assert "request" in kwargs, "cannot generate prompt without request"
     addendum = kwargs.get('planning_finalization_prompt_addendum', None)
@@ -215,8 +215,8 @@ def generate_planning_finalization_prompt(**kwargs) -> str:
 
 def generate_executing_prompt(**kwargs) -> str:
     """Generate prompt for EXECUTING phase."""
-    tempalte = kwargs.get(
-        'executing_prompt_template', EXECUTING_PROMPT_TEMPLTAE
+    template = kwargs.get(
+        'executing_prompt_template', EXECUTING_PROMPT_TEMPLATE
     )
     assert "request" in kwargs, "cannot generate prompt without request"
     assert "task" in kwargs, "cannot generate prompt without task"
@@ -228,7 +228,7 @@ def generate_executing_prompt(**kwargs) -> str:
 
 def generate_reviewing_task_prompt(**kwargs) -> str:
     """Generate prompt for REVIEWING phase for a task."""
-    tempalte = kwargs.get(
+    template = kwargs.get(
         'reviewing_task_prompt_template', REVIEWING_TASK_PROMPT_TEMPLATE
     )
     assert "request" in kwargs, "cannot generate prompt without request"
@@ -241,7 +241,7 @@ def generate_reviewing_task_prompt(**kwargs) -> str:
 
 def generate_planning_task_remediation_prompt(**kwargs) -> str:
     """Generate prompt for PLANNING phase to remediate a rejected task."""
-    tempalte = kwargs.get(
+    template = kwargs.get(
         'planning_task_remediation_prompt_template',
         PLANNING_TASK_REMEDIATION_PROMPT_TEMPLATE
     )
@@ -255,8 +255,8 @@ def generate_planning_task_remediation_prompt(**kwargs) -> str:
 
 
 def generate_reviewing_final_prompt(**kwargs) -> str:
-    """Generate prompt for phase."""
-    tempalte = kwargs.get(
+    """Generate prompt for final REVIEW phase."""
+    template = kwargs.get(
         'reviewing_final_prompt_template',
         REVIEWING_FINAL_PROMPT_TEMPLATE
     )
@@ -269,7 +269,7 @@ def generate_reviewing_final_prompt(**kwargs) -> str:
 
 def generate_compaction_prompt(**kwargs) -> str:
     """Generate prompt for compaction."""
-    tempalte = kwargs.get(
+    template = kwargs.get(
         'compaction_prompt_template',
         COMPACTION_PROMPT_TEMPLATE
     )
@@ -283,7 +283,7 @@ def generate_compaction_prompt(**kwargs) -> str:
 
 
 def generate_done_prompt(**kwargs) -> str:
-    """Generate prompt for phase."""
-    tempalte = kwargs.get('done_prompt_template', DONE_PROMPT_TEMPLATE)
+    """Generate prompt for DONE phase."""
+    template = kwargs.get('done_prompt_template', DONE_PROMPT_TEMPLATE)
     assert "request" in kwargs, "cannot generate prompt without request"
     return interpolate_template(template, **kwargs)
