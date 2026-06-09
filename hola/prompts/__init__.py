@@ -13,6 +13,8 @@ from hola.prompts.compaction import (
     estimate_tokens,
 )
 from hola.prompts.generators import (
+    prompt_generator,
+    generate_prompt,
     generate_compaction_prompt,
     generate_done_prompt,
     generate_executing_prompt,

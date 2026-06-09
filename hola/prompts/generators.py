@@ -3,10 +3,12 @@ Prompt generator functions for different workflow phases.
 """
 
 from string import Template
+from hola.errors import value_assert
+from hola.types import PromptGenerator
 
 
 PLANNING_PROMPT_PREFIX = """You are a workflow planning agent preparing a plan \
-to fulfill the request.
+to fulfill a request.
 Break it down into clear, actionable steps using the task tools. The number of \
 tasks should be commensurate with the complexity of the request. Any details \
 for a task can be accessed using `memorize` and `recall` tools with the task \
@@ -15,6 +17,10 @@ phase, so all non-planning tasks should be assigned to the EXECUTING phase. In \
 rare instances, specific tasks may be useful for the REVIEWING phase, in which \
 case you may add tasks for that phase, but only do so if you foresee a very \
 specific potential issue that must be subjected to a dedicated review task.
+
+<original_request>
+$request
+</original_request>
 """
 
 INITIAL_PLANNING_PROMPT_TEMPLATE = f"""{PLANNING_PROMPT_PREFIX}
@@ -23,18 +29,10 @@ related tasks in batches, create tasks for the PLANNING phase (which will be \
 run in a subsequent turn of the PLANNING phase with a fresh context).
 Once the tasks are created and no PLANNING phase tasks remain incomplete, the
 workflow will move to the EXECUTING phase, which will execute each task assigned \
-to the EXECUTING phase in order and with fresh context.
-
-<original_request>
-$request
-</original_request>"""
+to the EXECUTING phase in order and with fresh context."""
 
 PLANNING_TASK_PROMPT_TEMPLATE = f"""{PLANNING_PROMPT_PREFIX}
 You have been assigned a task to further the plan creation process.
-
-<original_request>
-$request
-</original_request>
 
 <task>
 $task
@@ -175,115 +173,169 @@ def interpolate_template(template: str, **values) -> str:
     return Template(template).substitute(values)
 
 
+_registry = {}
+
+def prompt_generator(phase: str, subphase: str = '') -> PromptGenerator:
+    """Register a prompt generator with decorator syntax."""
+    def decorator(func: PromptGenerator) -> PromptGenerator:
+        generators = _registry.get(phase, {})
+        generators[subphase] = func
+        _registry[phase] = generators
+        return func
+    return decorator
+
+def generate_prompt(phase: str, subphase: str = '', **kwargs) -> str:
+    """Generate the instructions for the given phase and subphase using
+        the registered prompt generator, passing `**kwargs`. Raises
+        `ValueError` if a prompt generator has not been registered for
+        the given phase and subphase.
+    """
+    generators = _registry.get(phase, {})
+    func = generators.get(subphase, None)
+    if func is None:
+        raise ValueError(f'Prompt generator missing for {phase=} and {subphase=}.')
+    return func(**kwargs)
+
+
+@prompt_generator("PLANNING")
 def generate_initial_planning_prompt(**kwargs) -> str:
     """Generate initial prompt for PLANNING phase."""
     template = kwargs.get(
         'initial_planning_prompt_template', INITIAL_PLANNING_PROMPT_TEMPLATE
     )
-    assert "request" in kwargs, "cannot generate prompt without request"
+    value_assert("request" in kwargs, "cannot generate prompt without request")
     addendum = kwargs.get('initial_planning_prompt_addendum', None)
     if addendum:
-        return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
 
 
+@prompt_generator("PLANNING", "TASK")
 def generate_planning_task_prompt(**kwargs) -> str:
     """Generate task prompt for PLANNING phase."""
     template = kwargs.get(
         'planning_task_prompt_template', PLANNING_TASK_PROMPT_TEMPLATE
     )
-    assert "request" in kwargs, "cannot generate prompt without request"
-    assert "task" in kwargs, "cannot generate prompt without task"
+    value_assert("request" in kwargs, "cannot generate prompt without request")
+    value_assert("task" in kwargs, "cannot generate prompt without task")
     addendum = kwargs.get('planning_task_prompt_addendum', None)
     if addendum:
-        return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
 
 
+@prompt_generator("PLANNING", "FINALIZATION")
 def generate_planning_finalization_prompt(**kwargs) -> str:
-    """Generate finalizaion prompt for PLANNING phase."""
+    """Generate finalization prompt for PLANNING phase."""
     template = kwargs.get(
         'planning_finalization_prompt_template',
         PLANNING_FINALIZATION_PROMPT_TEMPLATE
     )
-    assert "request" in kwargs, "cannot generate prompt without request"
+    value_assert("request" in kwargs, "cannot generate prompt without request")
     addendum = kwargs.get('planning_finalization_prompt_addendum', None)
     if addendum:
-        return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
 
 
+@prompt_generator("EXECUTING")
 def generate_executing_prompt(**kwargs) -> str:
     """Generate prompt for EXECUTING phase."""
     template = kwargs.get(
         'executing_prompt_template', EXECUTING_PROMPT_TEMPLATE
     )
-    assert "request" in kwargs, "cannot generate prompt without request"
-    assert "task" in kwargs, "cannot generate prompt without task"
+    value_assert("request" in kwargs, "cannot generate prompt without request")
+    value_assert("task" in kwargs, "cannot generate prompt without task")
     addendum = kwargs.get('executing_prompt_addendum', None)
     if addendum:
-        return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
 
 
+@prompt_generator("REVIEWING", "TASK")
 def generate_reviewing_task_prompt(**kwargs) -> str:
     """Generate prompt for REVIEWING phase for a task."""
     template = kwargs.get(
         'reviewing_task_prompt_template', REVIEWING_TASK_PROMPT_TEMPLATE
     )
-    assert "request" in kwargs, "cannot generate prompt without request"
-    assert "task" in kwargs, "cannot generate prompt without task"
+    value_assert("request" in kwargs, "cannot generate prompt without request")
+    value_assert("task" in kwargs, "cannot generate prompt without task")
     addendum = kwargs.get('reviewing_task_prompt_addendum', None)
     if addendum:
-        return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
 
 
+@prompt_generator("PLANNING", "TASK_REMEDIATION")
 def generate_planning_task_remediation_prompt(**kwargs) -> str:
     """Generate prompt for PLANNING phase to remediate a rejected task."""
     template = kwargs.get(
         'planning_task_remediation_prompt_template',
         PLANNING_TASK_REMEDIATION_PROMPT_TEMPLATE
     )
-    assert "request" in kwargs, "cannot generate prompt without request"
-    assert "task" in kwargs, "cannot generate prompt without task"
-    assert "reject_reason" in kwargs, "cannot generate prompt without reject_reason"
-    addendum = kwargs.get('planning_task_prompt_addendum', None)
+    value_assert("request" in kwargs, "cannot generate prompt without request")
+    value_assert("task" in kwargs, "cannot generate prompt without task")
+    value_assert(
+        "reject_reason" in kwargs,
+        "cannot generate prompt without reject_reason",
+    )
+    addendum = kwargs.get('planning_task_remediation_prompt_addendum', None)
     if addendum:
-        return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
 
 
+@prompt_generator("REVIEWING", "FINAL")
 def generate_reviewing_final_prompt(**kwargs) -> str:
     """Generate prompt for final REVIEW phase."""
     template = kwargs.get(
         'reviewing_final_prompt_template',
         REVIEWING_FINAL_PROMPT_TEMPLATE
     )
-    assert "request" in kwargs, "cannot generate prompt without request"
+    value_assert("request" in kwargs, "cannot generate prompt without request")
     addendum = kwargs.get('reviewing_final_prompt_addendum', None)
     if addendum:
-        return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
 
 
+@prompt_generator("PLANNING", "RECOVER")
+def generate_planning_remediation_prompt(**kwargs) -> str:
+    """Generate prompt for remediation from final review rejection."""
+    template = kwargs.get(
+        'planning_recover_final_rejection_prompt_template',
+        PLANNING_RECOVER_FINAL_REJECTION_TEMPLATE,
+    )
+    value_assert("request" in kwargs, "cannot generate prompt without request")
+    value_assert("review" in kwargs, "cannot generate prompt without review")
+    addendum = kwargs.get('planning_recover_final_rejection_prompt_addendum', None)
+    if addendum:
+        template += f'\n\n{addendum}'
+    return interpolate_template(template, **kwargs)
+
+
+@prompt_generator("COMPACTION")
 def generate_compaction_prompt(**kwargs) -> str:
     """Generate prompt for compaction."""
     template = kwargs.get(
         'compaction_prompt_template',
         COMPACTION_PROMPT_TEMPLATE
     )
-    assert "request" in kwargs, "cannot generate prompt without request"
+    value_assert("request" in kwargs, "cannot generate prompt without request")
     if "task" not in kwargs:
         kwargs["task"] = "N/A"
     addendum = kwargs.get('compaction_prompt_addendum', None)
     if addendum:
-        return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
 
 
+@prompt_generator("DONE")
 def generate_done_prompt(**kwargs) -> str:
     """Generate prompt for DONE phase."""
     template = kwargs.get('done_prompt_template', DONE_PROMPT_TEMPLATE)
-    assert "request" in kwargs, "cannot generate prompt without request"
+    value_assert("request" in kwargs, "cannot generate prompt without request")
+    addendum = kwargs.get('done_prompt_addendum', None)
+    if addendum:
+        template += f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
