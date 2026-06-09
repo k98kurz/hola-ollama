@@ -250,7 +250,7 @@ class LLMClient(Protocol):
 
 PromptGenerator = Callable[
     [SessionProtocol, str, dict[str, str] | None],
-    list[Message]
+    str
 ]
 
 Adapter = Callable[

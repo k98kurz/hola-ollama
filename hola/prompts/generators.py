@@ -233,7 +233,7 @@ def generate_reviewing_task_prompt(**kwargs) -> str:
     )
     assert "request" in kwargs, "cannot generate prompt without request"
     assert "task" in kwargs, "cannot generate prompt without task"
-    addendum = kwargs.get('_prompt_addendum', None)
+    addendum = kwargs.get('reviewing_task_prompt_addendum', None)
     if addendum:
         return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
@@ -248,7 +248,7 @@ def generate_planning_task_remediation_prompt(**kwargs) -> str:
     assert "request" in kwargs, "cannot generate prompt without request"
     assert "task" in kwargs, "cannot generate prompt without task"
     assert "reject_reason" in kwargs, "cannot generate prompt without reject_reason"
-    addendum = kwargs.get('_prompt_addendum', None)
+    addendum = kwargs.get('planning_task_prompt_addendum', None)
     if addendum:
         return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
@@ -261,7 +261,7 @@ def generate_reviewing_final_prompt(**kwargs) -> str:
         REVIEWING_FINAL_PROMPT_TEMPLATE
     )
     assert "request" in kwargs, "cannot generate prompt without request"
-    addendum = kwargs.get('_prompt_addendum', None)
+    addendum = kwargs.get('reviewing_final_prompt_addendum', None)
     if addendum:
         return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)
@@ -276,7 +276,7 @@ def generate_compaction_prompt(**kwargs) -> str:
     assert "request" in kwargs, "cannot generate prompt without request"
     if "task" not in kwargs:
         kwargs["task"] = "N/A"
-    addendum = kwargs.get('_prompt_addendum', None)
+    addendum = kwargs.get('compaction_prompt_addendum', None)
     if addendum:
         return interpolate_template(template, **kwargs) + f'\n\n{addendum}'
     return interpolate_template(template, **kwargs)

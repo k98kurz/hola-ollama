@@ -9,13 +9,14 @@ import packify
 
 
 DEFAULT_MAX_CONTEXT: int = 4096
-DEFAULT_CONTEXT_THRESHOLD_RATIO: float = 0.73
+DEFAULT_CONTEXT_THRESHOLD_RATIO: float = 0.7
 DEFAULT_COMPACTION_RATIO: float = 0.5
 ESTIMATED_CHARS_PER_TOKEN_RATIO: float = 4.0
 
 COMPACTION_FAILED_MESSAGE: str = (
     "Compaction failed for older messages. "
-    "Previous context was truncated."
+    "Previous context was truncated. "
+    "Useful information may be found in session memories."
 )
 
 
@@ -34,7 +35,9 @@ def calculate_context_size(messages: list[Message]) -> int:
         estimated tokens for each message.
     """
     return sum([
-        m.tokens if m.tokens else m.estimated_tokens
+        m.tokens if m.tokens
+        else m.estimated_tokens if m.estimated_tokens
+        else estimate_tokens(m)
         for m in messages
     ])
 
