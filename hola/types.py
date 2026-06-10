@@ -38,6 +38,8 @@ class Message:
     thinking: str | None = None
     tokens: int = 0
     estimated_tokens: int = 0
+    model: str = ''
+    sequence: int = -1
 
 
 class SessionProtocol(Protocol):
@@ -57,10 +59,20 @@ class SessionProtocol(Protocol):
         """Access the session config."""
         ...
 
+    def insert_compaction(
+            self, model: str, phase: str, content: str,
+            message_sequences: list[int],
+        ) -> str:
+        """Create a compaction message and mark the given message
+            sequences as compacted by it. Returns the compaction
+            message ID.
+        """
+        ...
+
     def get_history(
             self, phase: str = None, model: str | None = None, limit: int = None,
             only_since_last_compaction: bool = True
-        ) -> list[tuple[str, Message]]:
+        ) -> list[Message]:
         """Get conversation history, optionally filtered by phase and
             model. `only_since_last_compaction` is only effective if
             `phase` is provided; by default, if `phase` is provided,

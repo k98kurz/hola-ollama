@@ -276,10 +276,10 @@ class TestSessionDataStorage(unittest.TestCase):
 
         history = self.session.get_history()
         assert len(history) == 1, len(history)
-        assert history[0][0] == "granite4.1:3b", history[0][0]
-        assert history[0][1].content == "Hello", history[0][1].content
-        assert history[0][1].tokens == 0, history[0][1].tokens
-        assert history[0][1].estimated_tokens > 0, history[0][1].estimated_tokens
+        assert history[0].model == "granite4.1:3b", history[0].model
+        assert history[0].content == "Hello", history[0].content
+        assert history[0].tokens == 0, history[0].tokens
+        assert history[0].estimated_tokens > 0, history[0].estimated_tokens
 
         initial_seq = self.session.sequence
         for i in range(5):
@@ -332,8 +332,8 @@ class TestSessionDataStorage(unittest.TestCase):
 
         history = self.session.get_history()
         assert len(history) == 1, len(history)
-        assert history[0][0] == "granite4.1:3b", history[0][0]
-        retrieved_msg = history[0][1]
+        assert history[0].model == "granite4.1:3b", history[0].model
+        retrieved_msg = history[0]
         assert retrieved_msg.content == "I'll help you with that", (
             retrieved_msg.content)
         assert retrieved_msg.tool_calls is not None, retrieved_msg.tool_calls
@@ -396,7 +396,7 @@ class TestSessionDataStorage(unittest.TestCase):
             )
 
         history = self.session.get_history()
-        contents = [msg[1].content for msg in history]
+        contents = [msg.content for msg in history]
         assert contents[-5:] == [
             "Msg 0", "Msg 1", "Msg 2", "Msg 3", "Msg 4"
         ], contents
@@ -574,7 +574,7 @@ class TestSessionDataStorage(unittest.TestCase):
         self.session.clear_history(phase='EXECUTING')
         history = self.session.get_history()
         assert len(history) == 1, f"Expected 1, got {len(history)}"
-        assert history[0][1].content == "Keep this", "Wrong message remained"
+        assert history[0].content == "Keep this", "Wrong message remained"
 
         seq_before = self.session.sequence
         self.session.add_message(
@@ -614,14 +614,12 @@ class TestSessionDataStorage(unittest.TestCase):
             phase='EXECUTING', only_since_last_compaction=True
         )
         assert len(history) == 3, len(history)
-        assert history[0][1].content == "Summary of previous messages"
-        assert history[1][1].content == "After compaction 0"
-        assert history[2][1].content == "After compaction 1"
+        assert history[0].content == "Summary of previous messages"
+        assert history[1].content == "After compaction 0"
+        assert history[2].content == "After compaction 1"
 
-        assert isinstance(history[0], tuple)
-        assert len(history[0]) == 2
-        assert history[0][0] == "granite4.1:3b"
-        assert isinstance(history[0][1], OMessage)
+        assert isinstance(history[0], OMessage)
+        assert history[0].model == "granite4.1:3b"
 
         history_all = self.session.get_history(
             phase='EXECUTING', only_since_last_compaction=False

@@ -143,10 +143,39 @@ class Session:
         m.estimated_tokens = estimate_tokens(m)
         m.save()
 
+    def insert_compaction(
+            self, model: str, phase: str, content: str,
+            message_sequences: list[int],
+        ) -> str:
+        """Create a compaction message and mark the given message
+            sequences as compacted by it. Returns the compaction
+            message ID.
+        """
+        compaction_seq = max(message_sequences) + 1
+        m = DBMessage({
+            'session_id': self.session_id,
+            'sequence': compaction_seq,
+            'role': Role.SYSTEM.value,
+            'model': model,
+            'phase': phase,
+            'content': content,
+            'is_compaction': True,
+        })
+        m.estimated_tokens = estimate_tokens(m)
+        m.save()
+
+        self.dbsession.messages().query().equal(
+            'phase', phase
+        ).is_in(
+            'sequence', message_sequences
+        ).update({'compacted_by': m.id})
+
+        return m.id
+
     def get_history(
             self, phase: str = None, model: str | None = None, limit: int = None,
             only_since_last_compaction: bool = True
-        ) -> list[tuple[str, OMessage]]:
+        ) -> list[OMessage]:
         """Get conversation history, optionally filtered by phase and
             model. `only_since_last_compaction` is only effective if
             `phase` is provided; by default, if `phase` is provided,
@@ -174,11 +203,12 @@ class Session:
             results.append(last_compaction)
 
         msgs = [
-            (m.model, OMessage(
+            OMessage(
                 m.role, m.content, thinking=m.thinking,
                 tool_calls=m.details.get('tool_calls'),
                 tokens=m.tokens, estimated_tokens=m.estimated_tokens,
-            ))
+                model=m.model, sequence=m.sequence,
+            )
             for m in results
         ]
         msgs.reverse()
