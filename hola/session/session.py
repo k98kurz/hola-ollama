@@ -22,7 +22,7 @@ from hola.session.models import (
 )
 from hola.session.storage import _get_session_temp_dir, initialize, _get_config
 from hola.session.fsm import (
-    FSM,
+    AsyncFSM as FSM,
     WorkflowFSM,
     WorkflowState,
     WorkflowEvent,

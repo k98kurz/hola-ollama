@@ -3,7 +3,7 @@ General-purpose workflow FSM for session management.
 """
 
 from enum import Enum, auto
-from flying_state_machines import FSM, Transition
+from flying_state_machines import AsyncFSM, AsyncTransition
 
 
 class WorkflowState(Enum):
@@ -27,47 +27,47 @@ class WorkflowEvent(Enum):
     ACCEPT = auto()
 
 
-class WorkflowFSM(FSM):
+class WorkflowFSM(AsyncFSM):
     """General-purpose workflow FSM with planning, execution, and review phases."""
     initial_state = WorkflowState.INIT
     rules = set([
-        Transition(
+        AsyncTransition(
             WorkflowState.INIT, WorkflowEvent.START, WorkflowState.PLANNING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.PLANNING, WorkflowEvent.CONTINUE, WorkflowState.PLANNING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.PLANNING, WorkflowEvent.EXECUTE, WorkflowState.EXECUTING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.EXECUTING, WorkflowEvent.CONTINUE, WorkflowState.EXECUTING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.EXECUTING,
             WorkflowEvent.REVIEW_TASK,
             WorkflowState.REVIEWING_TASK
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.REVIEWING_TASK,
             WorkflowEvent.REJECT,
             WorkflowState.PLANNING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.REVIEWING_TASK,
             WorkflowEvent.ACCEPT,
             WorkflowState.EXECUTING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.EXECUTING, WorkflowEvent.REVIEW, WorkflowState.REVIEWING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.REVIEWING, WorkflowEvent.CONTINUE, WorkflowState.REVIEWING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.REVIEWING, WorkflowEvent.REJECT, WorkflowState.PLANNING
         ),
-        Transition(
+        AsyncTransition(
             WorkflowState.REVIEWING, WorkflowEvent.ACCEPT, WorkflowState.DONE
         ),
     ])

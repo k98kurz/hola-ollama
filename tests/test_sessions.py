@@ -27,6 +27,7 @@ import os
 import shutil
 import time
 import unittest
+import asyncio
 import packify
 
 
@@ -667,68 +668,85 @@ class TestSessionFSMData(unittest.TestCase):
 
     def test_fsm_storage_and_retrieval(self):
         """Test FSM can be stored and retrieved from session."""
-        self.session.state.input(WorkflowEvent.START)
-        self.session.state.input(WorkflowEvent.EXECUTE)
+        async def test():
+            await self.session.state.input(WorkflowEvent.START)
+            await self.session.state.input(WorkflowEvent.EXECUTE)
 
-        assert self.session.state.current == WorkflowState.EXECUTING, (
-            self.session.state.current
-        )
+            assert self.session.state.current == WorkflowState.EXECUTING, (
+                self.session.state.current
+            )
 
-        reloaded = get_session(self.session.session_id, portable=True)
-        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
-        assert reloaded.state.current == WorkflowState.EXECUTING, (
-            reloaded.state.current
-        )
+            reloaded = get_session(self.session.session_id, portable=True)
+            reloaded.load_fsm_data(
+                WorkflowFSM, inject={'WorkflowState': WorkflowState}
+            )
+            assert reloaded.state.current == WorkflowState.EXECUTING, (
+                reloaded.state.current
+            )
+        asyncio.run(test())
 
     def test_fsm_persistence_across_session_reloads(self):
         """Test FSM state autosaves correctly across session reloads."""
         session_id = self.session.session_id
-        self.session.state.input(WorkflowEvent.START)
-        self.session.state.input(WorkflowEvent.EXECUTE)
-        self.session.state.input(WorkflowEvent.REVIEW)
+        async def test():
+            await self.session.state.input(WorkflowEvent.START)
+            await self.session.state.input(WorkflowEvent.EXECUTE)
+            await self.session.state.input(WorkflowEvent.REVIEW)
 
-        assert self.session.state.current == WorkflowState.REVIEWING, (
-            self.session.state.current
-        )
+            assert self.session.state.current == WorkflowState.REVIEWING, (
+                self.session.state.current
+            )
 
-        reloaded = get_session(session_id, portable=True)
-        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
-        assert reloaded.state.current == WorkflowState.REVIEWING, (
-            reloaded.state.current
-        )
+            reloaded = get_session(session_id, portable=True)
+            reloaded.load_fsm_data(
+                WorkflowFSM, inject={'WorkflowState': WorkflowState}
+            )
+            assert reloaded.state.current == WorkflowState.REVIEWING, (
+                reloaded.state.current
+            )
 
-        reloaded.state.input(WorkflowEvent.REJECT)
-        reloaded = get_session(session_id, portable=True)
-        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
-        assert reloaded.state.current == WorkflowState.PLANNING, (
-            reloaded.state.current
-        )
+            await reloaded.state.input(WorkflowEvent.REJECT)
+            reloaded = get_session(session_id, portable=True)
+            reloaded.load_fsm_data(
+                WorkflowFSM, inject={'WorkflowState': WorkflowState}
+            )
+            assert reloaded.state.current == WorkflowState.PLANNING, (
+                reloaded.state.current
+            )
+        asyncio.run(test())
 
     def test_set_fsm_replaces_instance(self):
         """Test set_fsm replaces the current FSM instance."""
         new_fsm = WorkflowFSM()
         self.session.set_fsm(new_fsm)
-        self.session.state.input(WorkflowEvent.START)
-        assert self.session.state.current == WorkflowState.PLANNING, (
-            self.session.state.current
-        )
+        async def test():
+            await self.session.state.input(WorkflowEvent.START)
 
-        reloaded = get_session(self.session.session_id, portable=True)
-        reloaded.load_fsm_data(WorkflowFSM, inject={'WorkflowState': WorkflowState})
-        assert reloaded.state.current == WorkflowState.PLANNING, (
-            reloaded.state.current
-        )
+            assert self.session.state.current == WorkflowState.PLANNING, (
+                self.session.state.current
+            )
+
+            reloaded = get_session(self.session.session_id, portable=True)
+            reloaded.load_fsm_data(
+                WorkflowFSM, inject={'WorkflowState': WorkflowState}
+            )
+            assert reloaded.state.current == WorkflowState.PLANNING, (
+                reloaded.state.current
+            )
+        asyncio.run(test())
 
     def test_load_fsm_data_custom_class(self):
         """Test loading FSM with custom inject dependencies."""
-        self.session.state.input(WorkflowEvent.START)
+        async def test():
+            await self.session.state.input(WorkflowEvent.START)
 
-        new_session = Session("fsm_load_test", portable=True)
-        new_session.state.input(WorkflowEvent.START)
-        assert new_session.state.current == WorkflowState.PLANNING, (
-            new_session.state.current
-        )
-        new_session.delete()
+            new_session = Session("fsm_load_test", portable=True)
+            await new_session.state.input(WorkflowEvent.START)
+            assert new_session.state.current == WorkflowState.PLANNING, (
+                new_session.state.current
+            )
+            new_session.delete()
+        asyncio.run(test())
 
     def test_save_fsm_data_manual(self):
         """Test manual save of FSM data."""
