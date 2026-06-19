@@ -2,9 +2,19 @@
 Compaction logic for managing conversation context.
 """
 
+from .adapters import (
+    tool_enabled_chat_adapter,
+    xml_workaround_chat_adapter,
+    generate_endpoint_adapter,
+)
+from .generators import generate_prompt
 from math import ceil
+from hola.errors import type_assert
 from hola.session.models import Message as DBMessage
-from hola.types import Message, SessionProtocol
+from hola.types import (
+    Adapter, ChatResponse, GenerateResponse, LLMClient, Message, Role,
+    SessionProtocol, GenerateRequest,
+)
 import packify
 
 
@@ -24,7 +34,7 @@ def estimate_tokens(message: Message | DBMessage) -> int:
     """Estimate tokens with a simple mechanism."""
     chars = len(message.content)
     if isinstance(message, DBMessage):
-        chars += len(message.data['details'])
+        chars += len(message.data.get('details', b''))
     else:
         chars += len(packify.pack(message.tool_calls))
     return ceil(chars / ESTIMATED_CHARS_PER_TOKEN_RATIO)
@@ -56,3 +66,84 @@ def check_context_threshold(session: SessionProtocol, phase: str) -> bool:
     messages = session.get_history(phase)
     context_size = calculate_context_size(messages)
     return context_size >= threshold
+
+
+def get_messages_to_compact(
+        session: SessionProtocol, phase: str
+    ) -> list[Message]:
+    """Returns a list of messages that should be compacted."""
+    compaction_ratio = session.config.get(
+        'context_compaction_ratio', DEFAULT_COMPACTION_RATIO
+    )
+    max_context = session.config.get('max_context', {}).get(
+        phase, DEFAULT_MAX_CONTEXT
+    )
+    default_target = session.config.get('context_compaction_target', {}).get(
+        'default', compaction_ratio * max_context
+    )
+    target = session.config.get('context_compaction_target', {}).get(
+        phase, default_target
+    )
+    messages = session.get_history(phase)
+    messages.reverse()
+    to_compact = []
+    total = 0
+    while total < target and len(messages):
+        to_compact.append(messages.pop())
+        total += calculate_context_size([to_compact[-1]])
+    return to_compact
+
+
+async def compact_messages(
+        client: LLMClient, model: str, messages: list[Message],
+        adapter: Adapter, tools = [], **kwargs
+    ) -> ChatResponse | GenerateResponse:
+    instructions = generate_prompt("COMPACTION", **kwargs)
+    request = adapter(instructions, messages, tools, model)
+    request.stream = False
+    if isinstance(request, GenerateRequest):
+        return await client.generate(request)
+    return await client.chat(request)
+
+
+async def autocompact(
+        session: SessionProtocol, client: LLMClient, phase: str,
+        *, debug: bool = False, **kwargs
+    ) -> Message | None:
+    if not check_context_threshold(session, phase):
+        return
+
+    messages = get_messages_to_compact(session, phase)
+    models_config = session.config.get('models')
+    model = models_config.get('COMPACTION', models_config.get('DEFAULT'))
+    type_assert(type(model) is str, 'missing model name config')
+    adapter_config = session.config.get('adapters', {})
+    adapter_name = adapter_config.get(model, 'tool_enabled_chat_adapter')
+    adapter = globals()[adapter_name]
+    result = None
+
+    for _ in range(session.config.get('compaction_retries', 3)):
+        try:
+            response = await compact_messages(
+                client, model, messages, adapter, **kwargs
+            )
+            if isinstance(response, GenerateResponse):
+                result = Message(
+                    role=Role.SYSTEM, content=response.response, model=model,
+                )
+            else:
+                result = response.message
+            break
+        except Exception:
+            if debug:
+                raise
+    if not result:
+        result = Message(
+            role=Role.SYSTEM, content=COMPACTION_FAILED_MESSAGE, model=model
+        )
+
+    sequences = [m.sequence for m in messages]
+    session.insert_compaction(model, phase, result.content, sequences)
+    result.role = Role.SYSTEM
+    return result
+

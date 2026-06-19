@@ -208,6 +208,8 @@ class Session:
                 tool_calls=m.details.get('tool_calls'),
                 tokens=m.tokens, estimated_tokens=m.estimated_tokens,
                 model=m.model, sequence=m.sequence,
+                id=m.id, is_compaction=m.is_compaction,
+                compacted_by=m.compacted_by,
             )
             for m in results
         ]

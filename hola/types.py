@@ -40,6 +40,9 @@ class Message:
     estimated_tokens: int = 0
     model: str = ''
     sequence: int = -1
+    id: str | None = None
+    is_compaction: bool = False
+    compacted_by: str | None = None
 
 
 class SessionProtocol(Protocol):

@@ -1,5 +1,6 @@
 """
-Adapter functions for transforming Message lists into provider-specific formats.
+Adapter functions for transforming Message lists into provider-specific
+request formats.
 """
 
 from hola.types import ChatRequest, GenerateRequest, Message, Role
@@ -106,8 +107,8 @@ def generate_endpoint_adapter(
     system = phase_instructions + '\n\n'
 
     if tools:
-        xml_tools = tools_to_xml(tools)
-        system +=  xml_tools + '\n\n'
+        xml_tools, tool_instructions = tools_to_xml(tools)
+        system +=  xml_tools + '\n\n' + tool_instructions + '\n\n'
 
     if rag_cag:
         system += rag_cag + '\n\n'
