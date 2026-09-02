@@ -43,6 +43,29 @@ with deterministic execution guarantees and reasonable security measures.
 - [ ] Optional daemon with scheduled workflows/agents
 - [ ] Optional TUI
 
+## Running the Harness
+
+This project focuses on providing tools for creating deterministic workflows for
+small, local models. The inference service supported is Ollama; llama.cpp support is
+planned.
+
+For Ollama, several environment variables are worth tuning:
+
+- `OLLAMA_CONTEXT_LENGTH`: sets the context length. Larger values use more memory.
+  Default is 4096.
+- `OLLAMA_KV_CACHE_TYPE`: sets KV cache quantization, trading precision for memory.
+  Valid values:
+  - `f16`: 16-bit float, default
+  - `q8_0`: 8-bit
+  - `q4_0`: 4-bit
+- `OLLAMA_NUM_PARALLEL`: number of parallel conversation threads to cache. Default is
+  1, which causes KV cache eviction on every switch. For workflows with parallel
+  agents of the same LLM, setting this to the number of agents will improve speed at
+  the cost of higher memory use.
+
+On Linux, the Ollama service will need to be restarted for environment changes to
+take effect.
+
 ## Testing
 
 First, clone the repo, set up the virtualenv, and install requirements.

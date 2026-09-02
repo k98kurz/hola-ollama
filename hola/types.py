@@ -8,6 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Protocol, runtime_checkable
 from hola.errors import validated_dataclass
+from hola.permissions import Permission
 from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
 
 

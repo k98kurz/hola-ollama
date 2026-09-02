@@ -26,6 +26,7 @@ from hola.types import (
     GenerateResponse,
     ModelInfo,
     ModelMetadata,
+    ToolDefinition,
 )
 import asyncio
 import logging
@@ -155,6 +156,52 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
                 )
 
             assert chunks[-1].done, chunks[-1].done
+
+    async def test_streaming_native_tool_calls(self):
+        tool_def = ToolDefinition(
+            name="get_capital",
+            description="Return the capital city of a given country.",
+            parameters={
+                "type": "object",
+                "properties": {"country": {"type": "string"}},
+                "required": ["country"],
+            },
+        )
+        request = ChatRequest(
+            model="granite4.1:3b",
+            messages=[
+                Message(
+                    role=Role.SYSTEM,
+                    content=(
+                        "Use the get_capital tool to find the capital of France."
+                    ),
+                )
+            ],
+            tools=[tool_def],
+            stream=True,
+        )
+        received = []
+        content_parts = []
+        async for chunk in await self.client.chat(request):
+            if chunk.message.content:
+                content_parts.append(chunk.message.content)
+            if chunk.message.tool_calls:
+                received.extend(chunk.message.tool_calls)
+            if chunk.done:
+                break
+        assert len(received) >= 1, (
+            f"Expected a native tool call, got {len(received)}. "
+            f"Content: {''.join(content_parts)}"
+        )
+        assert received[0].function.name == "get_capital", received[0].function.name
+        assert isinstance(received[0].function.arguments, dict), type(
+            received[0].function.arguments
+        )
+        if "country" not in received[0].function.arguments:
+            logging.warning(
+                "Tool call arrived but `country` argument missing: %s",
+                received[0].function.arguments,
+            )
 
     async def test_list_models(self):
         models = await self.client.list_models()
