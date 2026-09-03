@@ -50,15 +50,18 @@ def tools_to_xml(tools: list[ToolDefinition]) -> tuple[str, str]:
                 items_type = param_def.get("items", {}).get("type", "string")
                 example_value = _get_example_value(items_type)
                 xml_parts.append(
-                    f"    <parameter name=\"{param_name}\">{example_value}</parameter>"
+                    f'    <parameter name="{param_name}">'
+                    f'{example_value}</parameter>'
                 )
                 xml_parts.append(
-                    f"    <parameter name=\"{param_name}\">{example_value}</parameter>"
+                    f'    <parameter name="{param_name}">'
+                    f'{example_value}</parameter>'
                 )
             else:
                 example_value = _get_example_value(param_type)
                 xml_parts.append(
-                    f"    <parameter name=\"{param_name}\">{example_value}</parameter>"
+                    f'    <parameter name="{param_name}">'
+                    f'{example_value}</parameter>'
                 )
 
         xml_parts.append("  </tool>")
@@ -189,7 +192,9 @@ def parse_tool_calls_from_xml(
                 if depth == 0:
                     end_pos = next_close + len(TOOL_CLOSE_TAG)
                     tool_content = xml_text[open_match.end():next_close]
-                    all_tool_info.append((tool_name, start_pos, end_pos, tool_content))
+                    all_tool_info.append(
+                        (tool_name, start_pos, end_pos, tool_content)
+                    )
                     break
                 else:
                     search_pos = next_close + len(TOOL_CLOSE_TAG)
@@ -298,9 +303,9 @@ def handle_nested_calls(
         tools: list[ToolDefinition] | None
     ) -> ToolCall | None:
     """Parse a single nested `<tool>` element in parameter content.
-        Returns a ToolCall object if found, or None if no tool is present.
-        Handles recursive nested tool calls within the nested tool's
-        parameters.
+        Returns a ToolCall object if found, or None if no tool
+        is present. Handles recursive nested tool calls within the
+        nested tool's parameters.
     """
     parameter_content = SELF_CLOSING_TOOL_PATTERN.sub(
         r'<tool name="\1"></tool>', parameter_content
@@ -425,7 +430,9 @@ def _serialize_tool_call(tool_call: ToolCall, indent: str, depth: int) -> str:
                 for item in param_value:
                     item_str = _serialize_value(item, indent, depth + 1)
                     if '<tool' in item_str:
-                        parts.append(f'{inner_prefix}<parameter name="{param_name}">')
+                        parts.append(
+                            f'{inner_prefix}<parameter name="{param_name}">'
+                        )
                         parts.append(item_str)
                         parts.append(f'{inner_prefix}</parameter>')
                     else:
@@ -472,10 +479,12 @@ def process_assistant_message(
         content: str,
         tools: list[ToolDefinition] | None = None
     ) -> tuple[str, list[ToolCall]]:
-    """Process LLM assistant message by extracting tool calls, replacing them
-        with a notice, and appending serialized XML with call_ids. Returns
-        (modified_content, tool_calls_with_call_ids). This prevents the LLM
-        from hallucinating call_ids while maintaining proper tool call tracking.
+    """Process LLM assistant message by extracting tool calls,
+        replacing them with a notice, and appending serialized XML
+        with call_ids. Returns (modified_content,
+        tool_calls_with_call_ids). This prevents the LLM from
+        hallucinating call_ids while maintaining proper tool call
+        tracking.
     """
     tool_calls = parse_tool_calls_from_xml(content, tools)
 
@@ -484,7 +493,10 @@ def process_assistant_message(
 
     tool_positions = _find_tool_positions(content)
 
-    placeholder = "[Tool call intercepted and processed by harness. See below for tool call with call_id assigned by the system.]"
+    placeholder = (
+        "[Tool call intercepted and processed by harness. See below"
+        " for tool call with call_id assigned by the system.]"
+    )
 
     parts = []
     cursor = 0

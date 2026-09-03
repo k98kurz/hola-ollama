@@ -68,8 +68,10 @@ class OllamaClient:
             allowed_exception_classes: list[type] | None = None,
         ) -> AsyncGenerator[None, None]:
         """Context manager for retrying operations on connection errors."""
-        max_retries = max_retries if max_retries is not None else self._config.max_retries
-        retry_delay = retry_delay if retry_delay is not None else self._config.retry_delay
+        max_retries = (max_retries if max_retries is not None
+                       else self._config.max_retries)
+        retry_delay = (retry_delay if retry_delay is not None
+                       else self._config.retry_delay)
         delay = retry_delay
 
         for attempt in range(max_retries):

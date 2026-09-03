@@ -166,9 +166,9 @@ def _execute(
         queue: Queue,
         restricted_open = None,
     ) -> None:
-    """Execute `code` with restricted environment and write results to `queue`.
-        Intended to be used in a subprocess, but this does not spawn a
-        subprocess itself.
+    """Execute `code` with restricted environment and write results
+        to `queue`. Intended to be used in a subprocess, but this
+        does not spawn a subprocess itself.
     """
     old_stdout = sys.stdout
     old_stderr = sys.stderr
@@ -261,10 +261,10 @@ class _RestrictedOpenFunc:
 def _execute_with_timeout(
         code: str, timeout: int, allowed_modules: list[str], restricted_open=None
     ) -> tuple[str, str]:
-    """Execute `code` with timeout using multiprocessing and permission-aware
-        file operations via `session`. Raises `TimeoutError` if execution
-        exceeds `timeout` and `VerificationException` for errors. Returns stdout
-        and stderr.
+    """Execute `code` with timeout using multiprocessing and
+        permission-aware file operations via `session`. Raises
+        `TimeoutError` if execution exceeds `timeout` and
+        `VerificationException` for errors. Returns stdout and stderr.
     """
     queue = Queue()
     process = Process(
@@ -307,10 +307,10 @@ def python(
         code: str, timeout: int = 5, session: SessionProtocol | None = None,
     ) -> tuple[str, str]:
     """Execute Python code with safety restrictions. Security mechanisms
-        include AST-based blacklist validation, module allowlist for
-        controlled imports, permission-aware file operations via session,
-        and timeout enforcement to prevent infinite loops. Returns the
-        stdout and stderr from code execution.
+        include AST-based blacklist validation, module allowlist
+        for controlled imports, permission-aware file operations
+        via session, and timeout enforcement to prevent infinite
+        loops. Returns the stdout and stderr from code execution.
     """
     _verify_blacklist(code, allow_open=(session is not None))
 

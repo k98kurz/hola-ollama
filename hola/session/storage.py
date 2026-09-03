@@ -33,9 +33,10 @@ def _get_session_temp_dir(session_id: str, portable: bool = False) -> Path:
 
 
 def initialize(portable: bool = False) -> None:
-    """Initialize database for session management. Call once per process.
-        If True, use portable mode (CWD/.hola/sessions/sessions.db). If
-        False, use system config (~/.config/hola/sessions/sessions.db).
+    """Initialize database for session management. Call once per
+        process. If True, use portable mode
+        (CWD/.hola/sessions/sessions.db). If False, use system
+        config (~/.config/hola/sessions/sessions.db).
     """
     db_path = _get_db_path(portable)
     db_dir = db_path.parent

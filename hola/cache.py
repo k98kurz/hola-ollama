@@ -16,7 +16,9 @@ class AsyncLRUCache:
         self._lock = asyncio.Lock()
 
     async def get(self, key: str) -> Any | None:
-        """Get value by key, updating access order. Returns None if not found."""
+        """Get value by key, updating access order. Returns None
+            if not found.
+        """
         async with self._lock:
             if key not in self._cache:
                 return None

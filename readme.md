@@ -80,7 +80,7 @@ pip install -r requirements.txt
 For windows, replace `source venv/bin/activate` with `source venv/Scripts/activate`.
 
 Ensure you have Ollama installed and have downloaded the following models:
-- qwen3:0.6b
+- qwen3.5:2b
 - granite4.1:3b
 
 Then run the test suite with the following:

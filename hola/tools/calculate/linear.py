@@ -20,7 +20,9 @@ except ImportError:
     _numpy_mode = False
 
 def set_numpy_mode(force: bool | None) -> None:
-    """Set numpy mode for testing. None=auto, True=force numpy, False=force custom."""
+    """Set numpy mode for testing. None=auto, True=force numpy,
+        False=force custom.
+    """
     global _numpy_mode
     _numpy_mode = force
 
@@ -64,12 +66,19 @@ def _is_zero(value: float | Decimal) -> bool:
     return abs(value) < 1e-10
 
 
+def _to_dec(value: float | Decimal) -> Decimal:
+    """Convert a scalar to `Decimal` if it is not already one."""
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
 class Vector:
     """Vector class for Decimal mode linear algebra operations."""
     def __init__(self, data: list[float | Decimal]) -> None:
         if not data or not all(_is_scalar(e) for e in data):
             raise ToolExecutionError("Vector must be non-empty list of numbers")
-        self.data = [Decimal(str(e)) if not isinstance(e, Decimal) else e for e in data]
+        self.data = [_to_dec(e) for e in data]
 
     def dim(self) -> int:
         """Return vector dimension."""
@@ -82,7 +91,9 @@ class Vector:
     def dot(self, other: Vector) -> Decimal:
         """Return dot product with another vector."""
         if self.dim() != other.dim():
-            raise ToolExecutionError(f"Dimension mismatch: {self.dim()} vs {other.dim()}")
+            raise ToolExecutionError(
+                f"Dimension mismatch: {self.dim()} vs {other.dim()}"
+            )
         return sum(a * b for a, b in zip(self.data, other.data))
 
     def cross(self, other: Vector) -> Vector:
@@ -116,25 +127,29 @@ class Vector:
     def add(self, other: Vector | Decimal) -> Vector:
         """Add vector or scalar."""
         if _is_scalar(other):
-            other_val = Decimal(str(other)) if not isinstance(other, Decimal) else other
+            other_val = _to_dec(other)
             return Vector([x + other_val for x in self.data])
         if not _is_vector(other):
             raise ToolExecutionError("Vector operation requires vector or scalar")
         if self.dim() != len(other):
-            raise ToolExecutionError(f"Dimension mismatch: {self.dim()} vs {len(other)}")
-        other_dec = [Decimal(str(e)) if not isinstance(e, Decimal) else e for e in other]
+            raise ToolExecutionError(
+                f"Dimension mismatch: {self.dim()} vs {len(other)}"
+            )
+        other_dec = [_to_dec(e) for e in other]
         return Vector([a + b for a, b in zip(self.data, other_dec)])
 
     def sub(self, other: Vector | Decimal) -> Vector:
         """Subtract vector or scalar."""
         if _is_scalar(other):
-            other_val = Decimal(str(other)) if not isinstance(other, Decimal) else other
+            other_val = _to_dec(other)
             return Vector([x - other_val for x in self.data])
         if not _is_vector(other):
             raise ToolExecutionError("Vector operation requires vector or scalar")
         if self.dim() != len(other):
-            raise ToolExecutionError(f"Dimension mismatch: {self.dim()} vs {len(other)}")
-        other_dec = [Decimal(str(e)) if not isinstance(e, Decimal) else e for e in other]
+            raise ToolExecutionError(
+                f"Dimension mismatch: {self.dim()} vs {len(other)}"
+            )
+        other_dec = [_to_dec(e) for e in other]
         return Vector([a - b for a, b in zip(self.data, other_dec)])
 
     def mul(self, other: Decimal) -> Vector:
@@ -211,7 +226,9 @@ class Matrix:
             return Vector(result)
 
         if not isinstance(other, Matrix):
-            raise ToolExecutionError("Matrix multiplication requires matrix or vector")
+            raise ToolExecutionError(
+                "Matrix multiplication requires matrix or vector"
+            )
 
         if self.cols() != other.rows():
             raise ToolExecutionError(
@@ -219,7 +236,10 @@ class Matrix:
                 f"vs {other.rows()}x{other.cols()}"
             )
 
-        result = [[Decimal(0) for _ in range(other.cols())] for _ in range(self.rows())]
+        result = [
+            [Decimal(0) for _ in range(other.cols())]
+            for _ in range(self.rows())
+        ]
         for i in range(self.rows()):
             for j in range(other.cols()):
                 for k in range(self.cols()):
@@ -246,7 +266,10 @@ class Matrix:
         if _is_zero(det):
             raise ToolExecutionError("Matrix is singular (determinant is zero)")
         n = self.rows()
-        I = Matrix([[Decimal(1) if i == j else Decimal(0) for j in range(n)] for i in range(n)])
+        I = Matrix([
+            [Decimal(1) if i == j else Decimal(0) for j in range(n)]
+            for i in range(n)
+        ])
         return self._solve_system(I)
 
     def rank(self) -> int:
@@ -300,7 +323,9 @@ class Matrix:
                 else:
                     sum_val = sum(L_data[k][j] * U_data[j][i] for j in range(i))
                     if _is_zero(U_data[i][i]):
-                        raise ToolExecutionError("Singular matrix in LU decomposition")
+                        raise ToolExecutionError(
+                            "Singular matrix in LU decomposition"
+                        )
                     L_data[k][i] = (self.data[k][i] - sum_val) / U_data[i][i]
 
         return Matrix(L_data), Matrix(U_data)
@@ -351,7 +376,9 @@ class Matrix:
             if pivot_row is None:
                 raise ToolExecutionError("Singular matrix in linear system")
 
-            augmented[col], augmented[pivot_row] = augmented[pivot_row], augmented[col]
+            temp = augmented[col]
+            augmented[col] = augmented[pivot_row]
+            augmented[pivot_row] = temp
             pivot = augmented[col][col]
 
             num_cols = len(augmented[col])
@@ -362,7 +389,7 @@ class Matrix:
                 if row != col and not _is_zero(augmented[row][col]):
                     factor = augmented[row][col]
                     for c in range(col, num_cols):
-                        augmented[row][c] = augmented[row][c] - factor * augmented[col][c]
+                        augmented[row][c] -= factor * augmented[col][c]
 
         b_cols = num_cols - n
         solution = [augmented[i][n:] for i in range(n)]
@@ -373,7 +400,7 @@ class Matrix:
     def add(self, other: Matrix | Decimal) -> Matrix:
         """Add matrix or scalar."""
         if _is_scalar(other):
-            other_val = Decimal(str(other)) if not isinstance(other, Decimal) else other
+            other_val = _to_dec(other)
             return Matrix([[x + other_val for x in row] for row in self.data])
         if isinstance(other, Matrix):
             if self.rows() != other.rows() or self.cols() != other.cols():
@@ -398,7 +425,7 @@ class Matrix:
     def sub(self, other: Matrix | Decimal) -> Matrix:
         """Subtract matrix or scalar."""
         if _is_scalar(other):
-            other_val = Decimal(str(other)) if not isinstance(other, Decimal) else other
+            other_val = _to_dec(other)
             return Matrix([[x - other_val for x in row] for row in self.data])
         if isinstance(other, Matrix):
             if self.rows() != other.rows() or self.cols() != other.cols():
@@ -669,8 +696,11 @@ def _inv_float(m: list[list[float]]) -> list[list[float]]:
         raise ToolExecutionError("Inverse requires square matrix")
     if abs(_det_float(m)) < 1e-10:
         raise ToolExecutionError("Matrix is singular (determinant is zero)")
-    aug = [[float(m[i][j]) for j in range(n)] + [1.0 if j == i else 0.0 for j in range(n)]
-           for i in range(n)]
+    aug = [
+        [float(m[i][j]) for j in range(n)]
+        + [1.0 if j == i else 0.0 for j in range(n)]
+        for i in range(n)
+    ]
     for i in range(n):
         pivot = aug[i][i]
         if abs(pivot) < 1e-10:
@@ -781,7 +811,9 @@ def _add_vectors_float(v1: list[float], v2: list[float]) -> list[float]:
     return [a + b for a, b in zip(v1, v2)]
 
 
-def _add_matrices_float(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
+def _add_matrices_float(
+        m1: list[list[float]], m2: list[list[float]],
+    ) -> list[list[float]]:
     """Add two matrices using pure Python float."""
     return [[a + b for a, b in zip(r1, r2)] for r1, r2 in zip(m1, m2)]
 
@@ -801,7 +833,9 @@ def _sub_vectors_float(v1: list[float], v2: list[float]) -> list[float]:
     return [a - b for a, b in zip(v1, v2)]
 
 
-def _sub_matrices_float(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
+def _sub_matrices_float(
+        m1: list[list[float]], m2: list[list[float]],
+    ) -> list[list[float]]:
     """Subtract two matrices using pure Python float."""
     return [[a - b for a, b in zip(r1, r2)] for r1, r2 in zip(m1, m2)]
 

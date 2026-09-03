@@ -26,6 +26,7 @@ from .linear import (
 )
 import math
 import math as math_mod
+import operator
 import re
 
 
@@ -33,6 +34,16 @@ try:
     import numpy as np
 except ImportError:
     pass
+
+
+def _float_array(value: list, op: Callable, other: Any) -> list:
+    """Apply `op` between numpy views of `value` and `other`, then
+        convert the result to nested lists of `float`.
+    """
+    arr = op(np.array(value), other)
+    if arr.ndim == 1:
+        return [float(x) for x in arr]
+    return [[float(x) for x in row] for row in arr]
 
 
 FUNCTIONS = {
@@ -360,60 +371,82 @@ class Evaluator:
             "phi": (1 + 5**0.5) / 2, # actual calculation for phi
         }
 
+        def combine(
+                result: Any, arg: Any, method: str, op: Callable,
+                float_same: tuple[Callable, Callable] | None,
+                float_scalar: tuple[Callable, Callable], allow_same: bool,
+            ) -> Any:
+            """Perform one binary arithmetic step for vector, matrix,
+                and scalar operands, selecting the numpy, pure-Python
+                float, or Decimal implementation based on precision.
+                `method` is the `Vector`/`Matrix` method name, `op` is
+                the operator for numpy arrays and for the native
+                fallback, and `float_same`/`float_scalar` are the
+                pure-Python float fallbacks for same-shape and scalar
+                arguments. When `allow_same` is False, vector/vector
+                and matrix/matrix combinations fall through to the
+                native operator. Returns `NotImplemented` only when
+                `result` is a `Vector` or `Matrix` and `arg` is
+                unsupported.
+            """
+            precision = self.precision
+            if isinstance(result, (Vector, Matrix)):
+                if allow_same and isinstance(arg, (Vector, Matrix)):
+                    return getattr(result, method)(arg)
+                if _is_scalar(arg):
+                    value = (
+                        Decimal(str(arg)) if precision > 0 else float(arg)
+                    )
+                    return getattr(result, method)(value)
+                return NotImplemented
+            if isinstance(result, list):
+                if _is_vector(result) and _is_vector(arg):
+                    if allow_same:
+                        if _use_numpy(precision):
+                            return _float_array(result, op, np.array(arg))
+                        if _use_float_mode(precision):
+                            return float_same[0](result, arg)
+                        return getattr(Vector(result), method)(Vector(arg))
+                elif _is_matrix(result) and _is_matrix(arg):
+                    if allow_same:
+                        if _use_numpy(precision):
+                            return _float_array(result, op, np.array(arg))
+                        if _use_float_mode(precision):
+                            return float_same[1](result, arg)
+                        return getattr(Matrix(result), method)(Matrix(arg))
+                elif _is_vector(result) and _is_scalar(arg):
+                    if _use_numpy(precision):
+                        return _float_array(result, op, float(arg))
+                    if _use_float_mode(precision):
+                        return float_scalar[0](result, float(arg))
+                    return getattr(Vector(result), method)(
+                        Decimal(str(arg))
+                    )
+                elif _is_matrix(result) and _is_scalar(arg):
+                    if _use_numpy(precision):
+                        return _float_array(result, op, float(arg))
+                    if _use_float_mode(precision):
+                        return float_scalar[1](result, float(arg))
+                    return getattr(Matrix(result), method)(
+                        Decimal(str(arg))
+                    )
+            return op(result, arg)
+
         def add(*args):
             if len(args) == 1:
                 return args[0]
             result = args[0]
             for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if isinstance(arg, (Vector, Matrix)):
-                        result = result.add(arg)
-                    elif _is_scalar(arg):
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.add(other_val)
-                    else:
-                        raise ToolExecutionError("Cannot add matrix/vector to incompatible type")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_vector(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) + np.array(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _add_vectors_float(result, arg)
-                        else:
-                            v1_dec = Vector(result)
-                            v2_dec = Vector(arg)
-                            result = v1_dec.add(v2_dec)
-                    elif _is_matrix(result) and _is_matrix(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) + np.array(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _add_matrices_float(result, arg)
-                        else:
-                            m1_dec = Matrix(result)
-                            m2_dec = Matrix(arg)
-                            result = m1_dec.add(m2_dec)
-                    elif _is_vector(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) + float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _add_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.add(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) + float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _add_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.add(other_val)
-                    else:
-                        result = result + arg
-                else:
-                    result = result + arg
+                result = combine(
+                    result, arg, "add", operator.add,
+                    (_add_vectors_float, _add_matrices_float),
+                    (_add_vector_scalar_float, _add_matrix_scalar_float),
+                    allow_same=True,
+                )
+                if result is NotImplemented:
+                    raise ToolExecutionError(
+                        "Cannot add matrix/vector to incompatible type"
+                    )
             return result
 
         def sub(*args):
@@ -421,407 +454,56 @@ class Evaluator:
                 return -args[0]
             result = args[0]
             for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if isinstance(arg, (Vector, Matrix)):
-                        result = result.sub(arg)
-                    elif _is_scalar(arg):
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.sub(other_val)
-                    else:
-                        raise ToolExecutionError("Cannot subtract incompatible type from matrix/vector")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_vector(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) - np.array(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_vectors_float(result, arg)
-                        else:
-                            v1_dec = Vector(result)
-                            v2_dec = Vector(arg)
-                            result = v1_dec.sub(v2_dec)
-                    elif _is_matrix(result) and _is_matrix(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) - np.array(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_matrices_float(result, arg)
-                        else:
-                            m1_dec = Matrix(result)
-                            m2_dec = Matrix(arg)
-                            result = m1_dec.sub(m2_dec)
-                    elif _is_vector(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) - float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.sub(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) - float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.sub(other_val)
-                    else:
-                        result = result - arg
-                else:
-                    result = result - arg
+                result = combine(
+                    result, arg, "sub", operator.sub,
+                    (_sub_vectors_float, _sub_matrices_float),
+                    (_sub_vector_scalar_float, _sub_matrix_scalar_float),
+                    allow_same=True,
+                )
+                if result is NotImplemented:
+                    raise ToolExecutionError(
+                        "Cannot subtract incompatible type from "
+                        "matrix/vector"
+                    )
             return result
 
         def mul(*args):
             result = args[0]
             for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if _is_scalar(arg):
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.mul(other_val)
-                    else:
-                        raise ToolExecutionError("Matrix/vector multiplication requires scalar (use matmul for matrix-vector multiplication)")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) * float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _mul_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.mul(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) * float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _mul_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.mul(other_val)
-                    else:
-                        result = result * arg
-                else:
-                    result = result * arg
+                if  (   isinstance(result, (Vector, Matrix))
+                        and not _is_scalar(arg)
+                    ):
+                    raise ToolExecutionError(
+                        "Matrix/vector multiplication requires scalar "
+                        "(use matmul for matrix-vector multiplication)"
+                    )
+                result = combine(
+                    result, arg, "mul", operator.mul, None,
+                    (_mul_vector_scalar_float, _mul_matrix_scalar_float),
+                    allow_same=False,
+                )
             return result
 
         def div(*args):
             if len(args) < 2:
-                raise ToolExecutionError("Division requires at least 2 arguments")
+                raise ToolExecutionError(
+                    "Division requires at least 2 arguments"
+                )
             result = args[0]
             for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.div(other_val)
-                    else:
-                        raise ToolExecutionError("Matrix/vector division requires scalar")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) / float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _div_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.div(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) / float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _div_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.div(other_val)
-                    else:
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        result = result / arg
-                else:
-                    if self._is_zero(arg):
-                        raise ToolExecutionError("Division by zero")
-                    result = result / arg
-            return result
-
-        def sub(*args):
-            if len(args) == 1:
-                return -args[0]
-            result = args[0]
-            for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if isinstance(arg, (Vector, Matrix)):
-                        result = result.sub(arg)
-                    elif _is_scalar(arg):
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.sub(other_val)
-                    else:
-                        raise ToolExecutionError("Cannot subtract incompatible type from matrix/vector")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_vector(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) - np.array(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_vectors_float(result, arg)
-                        else:
-                            v1_dec = Vector(result)
-                            v2_dec = Vector(arg)
-                            result = v1_dec.sub(v2_dec)
-                    elif _is_matrix(result) and _is_matrix(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) - np.array(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_matrices_float(result, arg)
-                        else:
-                            m1_dec = Matrix(result)
-                            m2_dec = Matrix(arg)
-                            result = m1_dec.sub(m2_dec)
-                    elif _is_vector(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) - float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.sub(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) - float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.sub(other_val)
-                    else:
-                        result = result - arg
-                else:
-                    result = result - arg
-            return result
-
-        def mul(*args):
-            result = args[0]
-            for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if _is_scalar(arg):
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.mul(other_val)
-                    else:
-                        raise ToolExecutionError("Matrix/vector multiplication requires scalar (use matmul for matrix-vector multiplication)")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) * float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _mul_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.mul(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) * float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _mul_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.mul(other_val)
-                    else:
-                        result = result * arg
-                else:
-                    result = result * arg
-            return result
-
-        def div(*args):
-            if len(args) < 2:
-                raise ToolExecutionError("Division requires at least 2 arguments")
-            result = args[0]
-            for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.div(other_val)
-                    else:
-                        raise ToolExecutionError("Matrix/vector division requires scalar")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) / float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _div_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.div(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) / float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _div_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.div(other_val)
-                    else:
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        result = result / arg
-                else:
-                    if self._is_zero(arg):
-                        raise ToolExecutionError("Division by zero")
-                    result = result / arg
-            return result
-
-        def sub(*args):
-            if len(args) == 1:
-                return -args[0]
-            result = args[0]
-            for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if isinstance(arg, (Vector, Matrix)):
-                        result = result.sub(arg)
-                    elif _is_scalar(arg):
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.sub(other_val)
-                    else:
-                        raise ToolExecutionError("Cannot subtract incompatible type from matrix/vector")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_vector(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) - np.array(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_vectors_float(result, arg)
-                        else:
-                            v1_dec = Vector(result)
-                            v2_dec = Vector(arg)
-                            result = v1_dec.sub(v2_dec)
-                    elif _is_matrix(result) and _is_matrix(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) - np.array(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_matrices_float(result, arg)
-                        else:
-                            m1_dec = Matrix(result)
-                            m2_dec = Matrix(arg)
-                            result = m1_dec.sub(m2_dec)
-                    elif _is_vector(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) - float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.sub(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) - float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _sub_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.sub(other_val)
-                    else:
-                        result = result - arg
-                else:
-                    result = result - arg
-            return result
-
-        def mul(*args):
-            result = args[0]
-            for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if _is_scalar(arg):
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.mul(other_val)
-                    else:
-                        raise ToolExecutionError("Matrix/vector multiplication requires scalar (use matmul for matrix-vector multiplication)")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) * float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _mul_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.mul(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) * float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _mul_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.mul(other_val)
-                    else:
-                        result = result * arg
-                else:
-                    result = result * arg
-            return result
-
-        def div(*args):
-            if len(args) < 2:
-                raise ToolExecutionError("Division requires at least 2 arguments")
-            result = args[0]
-            for arg in args[1:]:
-                if isinstance(result, (Vector, Matrix)):
-                    if _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        other_val = Decimal(str(arg)) if self.precision > 0 else float(arg)
-                        result = result.div(other_val)
-                    else:
-                        raise ToolExecutionError("Matrix/vector division requires scalar")
-                elif isinstance(result, list):
-                    if _is_vector(result) and _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        if _use_numpy(self.precision):
-                            result = [float(x) for x in (np.array(result) / float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _div_vector_scalar_float(result, float(arg))
-                        else:
-                            v_dec = Vector(result)
-                            other_val = Decimal(str(arg))
-                            result = v_dec.div(other_val)
-                    elif _is_matrix(result) and _is_scalar(arg):
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        if _use_numpy(self.precision):
-                            result = [[float(x) for x in row] for row in (np.array(result) / float(arg))]
-                        elif _use_float_mode(self.precision):
-                            result = _div_matrix_scalar_float(result, float(arg))
-                        else:
-                            m_dec = Matrix(result)
-                            other_val = Decimal(str(arg))
-                            result = m_dec.div(other_val)
-                    else:
-                        if self._is_zero(arg):
-                            raise ToolExecutionError("Division by zero")
-                        result = result / arg
-                else:
-                    if self._is_zero(arg):
-                        raise ToolExecutionError("Division by zero")
-                    result = result / arg
+                if  (   isinstance(result, (Vector, Matrix))
+                        and not _is_scalar(arg)
+                    ):
+                    raise ToolExecutionError(
+                        "Matrix/vector division requires scalar"
+                    )
+                if self._is_zero(arg):
+                    raise ToolExecutionError("Division by zero")
+                result = combine(
+                    result, arg, "div", operator.truediv, None,
+                    (_div_vector_scalar_float, _div_matrix_scalar_float),
+                    allow_same=False,
+                )
             return result
 
         def mod(*args):
@@ -1021,7 +703,12 @@ class Evaluator:
             if isinstance(x, Vector):
                 return x.norm()
             if isinstance(x, Matrix):
-                return sum(x.data[i][j] ** 2 for i in range(x.rows()) for j in range(x.cols())).sqrt()
+                total = sum(
+                    x.data[i][j] ** 2
+                    for i in range(x.rows())
+                    for j in range(x.cols())
+                )
+                return total.sqrt()
             raise ToolExecutionError("norm requires vector or matrix")
 
         def dot_impl(v1, v2):
@@ -1285,7 +972,9 @@ class Evaluator:
             return str(value)
         return str(value)
 
-    def _convert_to_output(self, value: float | Decimal | Vector | Matrix | list) -> str | list[str]:
+    def _convert_to_output(
+            self, value: float | Decimal | Vector | Matrix | list,
+        ) -> str | list[str]:
         """Convert value to output format."""
         def _convert_vector_element(x: float | Decimal) -> int | float:
             """Convert vector element for list representation."""
@@ -1302,18 +991,31 @@ class Evaluator:
                 return [self._convert_scalar(x) for x in value.data]
             return str([_convert_vector_element(x) for x in value.data])
         if isinstance(value, Matrix):
-            return str([[_convert_matrix_element(x) for x in row] for row in value.data])
+            converted = [
+                [_convert_matrix_element(x) for x in row]
+                for row in value.data
+            ]
+            return str(converted)
         if isinstance(value, list):
             if value and _is_vector(value):
                 if self.precision == 0:
                     return [self._convert_scalar(x) for x in value]
                 return str([_convert_vector_element(x) for x in value])
             if value and _is_matrix(value):
-                return str([[_convert_matrix_element(x) for x in row] for row in value])
+                converted = [
+                    [_convert_matrix_element(x) for x in row]
+                    for row in value
+                ]
+                return str(converted)
             if value and all(_is_scalar(e) for e in value):
                 return [self._convert_scalar(x) for x in value]
             if value and all(_is_matrix(m) for m in value):
-                return str([[[_convert_matrix_element(x) for x in row] for row in m] for m in value])
+                converted = [
+                    [[_convert_matrix_element(x) for x in row]
+                        for row in m]
+                    for m in value
+                ]
+                return str(converted)
             return value
         return self._convert_scalar(value)
 
@@ -1372,12 +1074,24 @@ class Evaluator:
                 if _use_float_mode(self.precision):
                     return [float(e) for e in elements]
                 return Vector(elements)
-            elif elements and all(_is_vector(e) or isinstance(e, Vector) for e in elements):
+            elif (   elements
+                    and all(
+                        _is_vector(e) or isinstance(e, Vector)
+                        for e in elements
+                    )
+                ):
                 if _use_numpy(self.precision):
                     return [[float(x) for x in row] for row in elements]
                 if _use_float_mode(self.precision):
-                    return [[float(x) for x in row] if isinstance(row, list) else row for row in elements]
-                return Matrix([list(row.data) if isinstance(row, Vector) else row for row in elements])
+                    return [
+                        [float(x) for x in row]
+                        if isinstance(row, list) else row
+                        for row in elements
+                    ]
+                return Matrix([
+                    list(row.data) if isinstance(row, Vector) else row
+                    for row in elements
+                ])
             return elements
 
         if isinstance(node, AssignmentNode):

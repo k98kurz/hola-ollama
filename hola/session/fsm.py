@@ -28,7 +28,9 @@ class WorkflowEvent(Enum):
 
 
 class WorkflowFSM(AsyncFSM):
-    """General-purpose workflow FSM with planning, execution, and review phases."""
+    """General-purpose workflow FSM with planning, execution, and
+        review phases.
+    """
     initial_state = WorkflowState.INIT
     rules = set([
         AsyncTransition(

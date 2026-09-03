@@ -19,8 +19,8 @@ class Memory(SqlModel):
 
     @property
     def content(self) -> packify.SerializableType:
-        """Return the deserialized memory content value. Can be set using
-            the setter to serialize and store a new value.
+        """Return the deserialized memory content value. Can be set
+            using the setter to serialize and store a new value.
         """
         return packify.unpack(self.data.get('content', None) or _None)
 

@@ -38,8 +38,8 @@ class Message(SqlModel):
 
     @property
     def role(self) -> Role:
-        """Return the message role as a `Role` enum. Can be set using the
-            setter to change the message role.
+        """Return the message role as a `Role` enum. Can be set
+            using the setter to change the message role.
         """
         return Role(self.data.get('role', 'user'))
 
@@ -49,8 +49,9 @@ class Message(SqlModel):
 
     @property
     def details(self) -> packify.SerializableType:
-        """Return the deserialized message details dictionary. Can be set
-            using the setter to serialize and store a new dictionary.
+        """Return the deserialized message details dictionary. Can be
+            set using the setter to serialize and store a new
+            dictionary.
         """
         return packify.unpack(
             self.data.get('details', None) or _empty,

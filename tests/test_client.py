@@ -34,6 +34,11 @@ import unittest
 import httpx
 
 
+THINKING_MODEL = "qwen3.5:2b"
+NON_THINKING_MODEL = "granite4.1:3b"
+THINKING_ARCHITECTURE = "qwen35"
+
+
 class TestClient(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
@@ -48,7 +53,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         async def cleanup():
             client = OllamaClient()
             try:
-                for model in ["qwen3:0.6b", "granite4.1:3b"]:
+                for model in [THINKING_MODEL, NON_THINKING_MODEL]:
                     try:
                         await client.unload_model(model)
                     except Exception:
@@ -104,11 +109,11 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
     async def test_streaming_operations(self):
         for request_type, request in [
                 ("chat", ChatRequest(
-                    model="qwen3:0.6b",
+                    model=THINKING_MODEL,
                     messages=[Message(role=Role.USER, content="Say hello")],
                 )),
                 ("generate", GenerateRequest(
-                    model="qwen3:0.6b",
+                    model=THINKING_MODEL,
                     prompt="Say hello",
                 )),
             ]:
@@ -168,7 +173,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             },
         )
         request = ChatRequest(
-            model="granite4.1:3b",
+            model=NON_THINKING_MODEL,
             messages=[
                 Message(
                     role=Role.SYSTEM,
@@ -210,15 +215,15 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         assert all([type(m) is ModelInfo for m in models]), models
 
     async def test_load_model_list_running_models_unload_model_e2e(self):
-        await self.client.load_model("qwen3:0.6b")
+        await self.client.load_model(THINKING_MODEL)
         models = await self.client.list_running_models()
         assert len(models) > 0, len(models)
         assert all([type(m) is RunningModel for m in models]), models
-        assert any([m.name == "qwen3:0.6b" for m in models]), models
-        await self.client.unload_model("qwen3:0.6b")
+        assert any([m.name == THINKING_MODEL for m in models]), models
+        await self.client.unload_model(THINKING_MODEL)
         await asyncio.sleep(1)
         models = await self.client.list_running_models()
-        assert not any([m.name == "qwen3:0.6b" for m in models]), models
+        assert not any([m.name == THINKING_MODEL for m in models]), models
 
     async def test_http_status_error(self):
         request = ChatRequest(
@@ -235,18 +240,20 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             await self.client.load_model("nonexistent")
 
     async def test_get_model_info_caching(self):
-        assert not await model_info_cache.get("qwen3:0.6b")
-        info1 = await self.client.get_model_info("qwen3:0.6b")
+        assert not await model_info_cache.get(THINKING_MODEL)
+        info1 = await self.client.get_model_info(THINKING_MODEL)
         assert info1.context_length > 0, info1.context_length
-        assert info1.architecture == "qwen3", info1.architecture
-        assert info1.model_name == "qwen3:0.6b", info1.model_name
-        assert await model_info_cache.get("qwen3:0.6b")
+        assert info1.architecture == THINKING_ARCHITECTURE, (
+            info1.architecture
+        )
+        assert info1.model_name == THINKING_MODEL, info1.model_name
+        assert await model_info_cache.get(THINKING_MODEL)
 
     async def test_get_model_info_cache_override(self):
         custom_cache = AsyncLRUCache(maxsize=5)
         client = OllamaClient(cache=custom_cache)
 
-        await client.get_model_info("qwen3:0.6b")
+        await client.get_model_info(THINKING_MODEL)
 
         assert len(custom_cache._cache) == 1
         assert len(model_info_cache._cache) == 0
@@ -280,7 +287,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         client = OllamaClient()
 
         request = ChatRequest(
-            model="granite4.1:3b",
+            model=NON_THINKING_MODEL,
             messages=[Message(role=Role.USER, content="test")],
             stream=False,
         )
@@ -295,7 +302,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_chat_with_stream_false(self):
         request = ChatRequest(
-            model="granite4.1:3b",
+            model=NON_THINKING_MODEL,
             messages=[Message(role=Role.USER, content="Say hello")],
             stream=False,
         )
@@ -308,7 +315,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
 
     async def test_generate_with_stream_false(self):
         request = GenerateRequest(
-            model="granite4.1:3b",
+            model=NON_THINKING_MODEL,
             prompt="Say hello",
             stream=False,
         )
