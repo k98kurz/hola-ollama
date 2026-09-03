@@ -62,7 +62,9 @@ knowledge maintained by the user.
 ## Line length
 
 - Soft max of 80 for normal lines
-- Hard max of 85 for code and 72 for docstrings
+- Hard max of 85 for code
+- Hard max of 72 for multi-line docstring lines
+- Hard max of 80 for single-line docstrings
 - NO dangling whitespace
 - Use scripts/linechecker.py
 

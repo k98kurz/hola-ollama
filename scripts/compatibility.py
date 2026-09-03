@@ -71,8 +71,8 @@ async def test_generate_endpoint(client: OllamaClient, model_name: str) -> str:
 
 
 def print_compatibility_table(
-    results: dict[str, dict[str, str]],
-) -> None:
+        results: dict[str, dict[str, str]],
+    ) -> None:
     print("Ollama Model Endpoint Response Times")
     print("=" * 60)
     print(f"{'Model Name':<30} {'/api/chat':<12} {'/api/generate':<12}")
