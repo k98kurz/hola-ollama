@@ -1,5 +1,6 @@
 """
-Tests for Permission system (Permission class and Session permission methods).
+Tests for Permission system (Permission class and Session
+permission methods).
 """
 
 from pathlib import Path
@@ -235,7 +236,7 @@ class TestPermissionManagement(TestSessionPermissionSetup):
 class TestPermissionFeatures(TestSessionPermissionSetup):
     """Test cases for permission hooks and allowed modules."""
     def test_permission_hook(self):
-        """Test permission hook allows/denies access and receives correct params."""
+        """Test permission hook allows/denies access with correct params."""
         hook_called = []
 
         def hook_func(path, requested, current):

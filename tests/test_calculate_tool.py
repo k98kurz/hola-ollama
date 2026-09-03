@@ -266,7 +266,7 @@ class TestCalculate(unittest.TestCase):
         asyncio.run(test())
 
     def test_complex_syntax_e2e(self):
-        """Test complex syntax: multiple statements, nesting, sequential returns."""
+        """Test complex syntax: multiple statements, nesting, and returns."""
         COMPLEX_SYNTAX_TESTS: list[tuple[str, list[str]]] = [
             (
                 ":= a 1; := b 2; := r1 (+ b (* a 3)); := r2 (+ b (* a 4)); r1; "
@@ -285,7 +285,7 @@ class TestCalculate(unittest.TestCase):
         asyncio.run(test("test_calc_complex_syntax", COMPLEX_SYNTAX_TESTS))
 
     def test_linear_algebra_nonprecision_mode(self):
-        """Test linear algebra operations in non-precision mode (precision=0)."""
+        """Test linear algebra operations in non-precision mode."""
         LINEAR_ALGEBRA_TESTS: list[tuple[str, list[str]]] = [
             ("norm [3 4]", ["5.0"]),
             ("dot [1 2 3] [4 5 6]", ["32.0"]),

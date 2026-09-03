@@ -14,10 +14,11 @@ from hola.ollama.client import OllamaClient
 
 class TestWarmer(unittest.TestCase):
     """Test cases for ModelWarmer."""
-
     def setUp(self):
         """Set up test fixtures."""
-        self.config = WarmerConfig(ping_interval_seconds=120, check_interval_seconds=1)
+        self.config = WarmerConfig(
+            ping_interval_seconds=120, check_interval_seconds=1
+        )
         self.mock_client = Mock(spec=OllamaClient)
         self.mock_client.load_model = AsyncMock()
 

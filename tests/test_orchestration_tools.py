@@ -28,7 +28,7 @@ class TestOrchestrationToolsRegistration(unittest.TestCase):
             assert tool_name in tool_names, f"{tool_name} not registered"
 
     def test_tools_schema_valid(self):
-        """Test orchestration tools have valid schema without session parameter."""
+        """Test tools have valid schema without a session parameter."""
         tools = list_tools()
         tool_dict = {t.name: t for t in tools}
 
@@ -44,8 +44,10 @@ class TestOrchestrationToolsRegistration(unittest.TestCase):
             params = tool.parameters.get('properties', {})
             required = tool.parameters.get('required', [])
 
-            assert 'session' not in params, f"{tool_name} should not have session param"
-            assert 'session' not in required, f"{tool_name} should not require session param"
+            assert 'session' not in params, (
+                f"{tool_name} should not have session param")
+            assert 'session' not in required, (
+                f"{tool_name} should not require session param")
 
 
 class TestTaskModel(unittest.TestCase):
@@ -272,7 +274,8 @@ class TestTaskLifecycle(unittest.TestCase):
 
     def test_add_task_with_notes(self):
         """Test adding task stores notes in memory."""
-        task = self.session.add_task('PLANNING', 'Task with notes', 'Detailed notes here')
+        task = self.session.add_task(
+            'PLANNING', 'Task with notes', 'Detailed notes here')
         assert task.memory_key is not None, task.memory_key
         expected_key = get_memory_key('Task with notes')
         assert task.memory_key == expected_key, task.memory_key
@@ -292,7 +295,7 @@ class TestTaskLifecycle(unittest.TestCase):
         assert "cannot be empty" in str(e.exception).lower()
 
     def test_add_task_whitespace_description_raises_error(self):
-        """Test adding task with whitespace-only description raises ValueError."""
+        """Test adding a whitespace-only task raises ValueError."""
         with self.assertRaises(ValueError) as e:
             self.session.add_task('PLANNING', '   ')
         assert "cannot be empty" in str(e.exception).lower()
@@ -334,22 +337,24 @@ class TestTaskLifecycle(unittest.TestCase):
         assert stored == {'rejection': reason}, stored
 
     def test_complete_task_with_notes_merges_into_memo(self):
-        """Test completing a task with notes merges completion into existing memo."""
+        """Test completing a task merges completion into existing memo."""
         task = self.session.add_task('EXECUTING', 'Test task', 'Initial notes')
         self.session.complete_task('EXECUTING', 1, 'Result: success')
 
         memory_key = get_memory_key('Test task')
         stored = self.session.recall(memory_key)
-        assert stored == {'notes': 'Initial notes', 'completion': 'Result: success'}, stored
+        expected = {'notes': 'Initial notes', 'completion': 'Result: success'}
+        assert stored == expected, stored
 
     def test_reject_task_with_notes_merges_into_memo(self):
-        """Test rejecting a task with notes merges rejection into existing memo."""
+        """Test rejecting a task merges rejection into existing memo."""
         task = self.session.add_task('REVIEWING', 'Test task 2', 'Initial notes')
         self.session.reject_task('REVIEWING', 1, 'Invalid approach')
 
         memory_key = get_memory_key('Test task 2')
         stored = self.session.recall(memory_key)
-        assert stored == {'notes': 'Initial notes', 'rejection': 'Invalid approach'}, stored
+        expected = {'notes': 'Initial notes', 'rejection': 'Invalid approach'}
+        assert stored == expected, stored
 
     def test_accept_task_marks_accepted(self):
         """Test accepting task marks status as ACCEPTED."""
@@ -369,7 +374,8 @@ class TestTaskLifecycle(unittest.TestCase):
 
     def test_delete_task_removes_memory_entry(self):
         """Test deleting task removes associated memory entry."""
-        task = self.session.add_task('PLANNING', 'Task with notes', 'Important notes')
+        task = self.session.add_task(
+            'PLANNING', 'Task with notes', 'Important notes')
         memory_key = task.memory_key
         self.session.delete_task('PLANNING', 1)
 
@@ -379,14 +385,17 @@ class TestTaskLifecycle(unittest.TestCase):
     def test_accept_workflow(self):
         """Test accepting workflow sets status in FSM context."""
         self.session.accept()
-        assert self.session.state.context['status'] == 'accepted', self.session.state.context['status']
+        assert self.session.state.context['status'] == 'accepted', (
+            self.session.state.context['status'])
 
     def test_reject_workflow(self):
         """Test rejecting workflow sets status and reason in FSM context."""
         reason = 'Code quality issues found'
         self.session.reject(reason)
-        assert self.session.state.context['status'] == 'rejected', self.session.state.context['status']
-        assert self.session.state.context['reject_reason'] == reason, self.session.state.context['reject_reason']
+        assert self.session.state.context['status'] == 'rejected', (
+            self.session.state.context['status'])
+        assert self.session.state.context['reject_reason'] == reason, (
+            self.session.state.context['reject_reason'])
 
     def test_reject_override(self):
         """Test multiple reject calls override previous reason."""
@@ -395,7 +404,8 @@ class TestTaskLifecycle(unittest.TestCase):
 
         new_reason = 'Updated rejection reason'
         self.session.reject(new_reason)
-        assert self.session.state.context['reject_reason'] == new_reason, self.session.state.context['reject_reason']
+        assert self.session.state.context['reject_reason'] == new_reason, (
+            self.session.state.context['reject_reason'])
 
     def test_workflow_status_persists(self):
         """Test workflow status persists across session reloads."""

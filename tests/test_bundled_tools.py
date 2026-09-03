@@ -22,6 +22,10 @@ class TestSessionBase(unittest.TestCase):
         self.session = Session(session_id, portable=True)
         self.test_dir = Path.cwd() / ".hola"
 
+    def permit(self, path: str | Path, mode: int = 7) -> None:
+        """Grant `mode` permission on `path` to the session."""
+        self.session.set_permission(str(path), Permission(mode))
+
     def tearDown(self):
         """Clean up after tests."""
         if self.test_dir.exists():
@@ -126,7 +130,7 @@ class TestMemorizeAndRecall(TestSessionBase):
 class TestGrep(TestSessionBase):
     def test_grep_single_file(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world\nhello there\ngoodbye world")
@@ -148,7 +152,7 @@ class TestGrep(TestSessionBase):
 
     def test_grep_line_numbers(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("line one\nline two\nline three\nline four")
@@ -170,7 +174,7 @@ class TestGrep(TestSessionBase):
 
     def test_grep_recursive(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             testdir = Path(self.session.dbsession.cwd) / "testdir"
             testdir.mkdir()
@@ -204,10 +208,11 @@ class TestGrep(TestSessionBase):
 
     def test_grep_context_after(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
-            test_file.write_text("line one\nline two\nline three\nline four\nline five")
+            test_file.write_text(
+                "line one\nline two\nline three\nline four\nline five")
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -225,10 +230,11 @@ class TestGrep(TestSessionBase):
 
     def test_grep_context_before(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
-            test_file.write_text("line one\nline two\nline three\nline four\nline five")
+            test_file.write_text(
+                "line one\nline two\nline three\nline four\nline five")
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -249,7 +255,9 @@ class TestGrep(TestSessionBase):
             call = ToolCall(
                 function=ToolCallFunction(
                     name="grep",
-                    arguments={"pattern": "hello", "data": "hello world\nhello there"},
+                    arguments={
+                        "pattern": "hello", "data": "hello world\nhello there"
+                    },
                 ),
             )
             result = await execute_tool_call(call, self.session)
@@ -291,7 +299,7 @@ class TestGrep(TestSessionBase):
 
     def test_grep_pattern_not_found(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world")
@@ -311,7 +319,7 @@ class TestGrep(TestSessionBase):
 
     def test_grep_permission_denied(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world")
@@ -339,7 +347,7 @@ class TestGrep(TestSessionBase):
 class TestRead(TestSessionBase):
     def test_read_success(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("Hello, World!")
@@ -358,7 +366,7 @@ class TestRead(TestSessionBase):
 
     def test_read_failures(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(4))
+            self.permit(self.session.dbsession.cwd, 4)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
@@ -397,7 +405,7 @@ class TestRead(TestSessionBase):
 class TestWrite(TestSessionBase):
     def test_write_success(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_dir = Path(self.session.dbsession.cwd) / "subdir" / "nested"
@@ -448,7 +456,7 @@ class TestWrite(TestSessionBase):
                 await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("existing")
@@ -472,7 +480,7 @@ class TestWrite(TestSessionBase):
 
     def test_write_nested_permissions(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             from hola.ollama.exceptions import ToolExecutionError
 
@@ -507,7 +515,7 @@ class TestWrite(TestSessionBase):
 class TestRm(TestSessionBase):
     def test_rm_success(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
@@ -578,7 +586,7 @@ class TestRm(TestSessionBase):
 class TestMv(TestSessionBase):
     def test_mv_success(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
@@ -629,7 +637,7 @@ class TestMv(TestSessionBase):
                 await execute_tool_call(call, self.session)
             self.assertIn("permission denied", str(cm.exception).lower())
 
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
@@ -669,7 +677,7 @@ class TestMv(TestSessionBase):
 class TestCp(TestSessionBase):
     def test_cp_success(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_dir = Path(self.session.dbsession.cwd) / "srcdir"
@@ -713,7 +721,7 @@ class TestCp(TestSessionBase):
 
     def test_cp_failures(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
@@ -782,7 +790,7 @@ class TestCp(TestSessionBase):
 class TestLs(TestSessionBase):
     def test_ls_basic(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
@@ -811,7 +819,7 @@ class TestLs(TestSessionBase):
 
     def test_ls_flags(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
@@ -841,7 +849,7 @@ class TestLs(TestSessionBase):
 
     def test_ls_recursive(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             nested_dir = Path(self.session.dbsession.cwd) / "dir1" / "dir2"
             nested_dir.mkdir(parents=True)
@@ -889,7 +897,7 @@ class TestLs(TestSessionBase):
 class TestEdit(TestSessionBase):
     def test_edit_first_occurrence(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world hello world")
@@ -913,7 +921,7 @@ class TestEdit(TestSessionBase):
 
     def test_edit_all_occurrences(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world hello world")
@@ -938,7 +946,7 @@ class TestEdit(TestSessionBase):
 
     def test_edit_skip_occurrences(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello world hello world hello")
@@ -963,7 +971,7 @@ class TestEdit(TestSessionBase):
 
     def test_edit_specific_count(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello hello hello hello")
@@ -988,7 +996,7 @@ class TestEdit(TestSessionBase):
 
     def test_edit_failures(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
@@ -1050,7 +1058,7 @@ class TestEdit(TestSessionBase):
 class TestAppend(TestSessionBase):
     def test_append_existing(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("hello ")
@@ -1073,7 +1081,7 @@ class TestAppend(TestSessionBase):
 
     def test_append_new_file(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
 
@@ -1095,7 +1103,7 @@ class TestAppend(TestSessionBase):
 
     def test_append_failures(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
@@ -1147,7 +1155,7 @@ class TestAppend(TestSessionBase):
 class TestFind(TestSessionBase):
     def test_find_all(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
@@ -1170,7 +1178,7 @@ class TestFind(TestSessionBase):
 
     def test_find_name_pattern(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
@@ -1198,7 +1206,7 @@ class TestFind(TestSessionBase):
 
     def test_find_type_filter(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
@@ -1237,7 +1245,7 @@ class TestFind(TestSessionBase):
 
     def test_find_depth_filter(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
@@ -1279,7 +1287,7 @@ class TestFind(TestSessionBase):
 
     def test_find_permissions(self):
         async def test():
-            self.session.set_permission(str(self.session.dbsession.cwd), Permission(7))
+            self.permit(self.session.dbsession.cwd)
 
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()

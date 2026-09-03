@@ -71,7 +71,8 @@ class TestPythonTool(unittest.TestCase):
             ("type().__bases__", "__bases__"),
             ("type().__mro__", "__mro__"),
             ("def f(): pass; f.__code__", "__code__"),
-            ("import json\njson.__builtins__['open']('test.txt', 'w')", "__builtins__"),
+            ("import json\njson.__builtins__['open']('test.txt', 'w')",
+             "__builtins__"),
             ("""
 for cls in ().__class__.__bases__[0].__subclasses__():
     # Find a class defined in the 'os' module

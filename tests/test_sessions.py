@@ -188,7 +188,7 @@ class TestTempFiles(unittest.TestCase):
             shutil.rmtree(hola_dir)
 
     def test_crud_operations(self):
-        """Test create, read, list, delete operations with string/bytes content."""
+        """Test create, read, list, delete with string/bytes content."""
         content_str = "Hello, World!"
         file_path = self.session.create_temp_file("test.txt", content_str)
         assert file_path.exists(), file_path
