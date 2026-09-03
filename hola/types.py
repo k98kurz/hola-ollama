@@ -10,10 +10,11 @@ from typing import Callable, Protocol, runtime_checkable
 from hola.errors import validated_dataclass
 from hola.permissions import Permission
 from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
+import packify
 
 
 __all__ = [
-    'Role', 'Message', 'SessionProtocol',
+    'Role', 'Message', 'TokenEstimatable', 'SessionProtocol',
     'ChatResponseChunk', 'ChatResponse',
     'ModelInfo', 'ModelMetadata',
     'GenerateChunk', 'GenerateResponse', 'GenerationOptions',
@@ -44,6 +45,29 @@ class Message:
     id: str | None = None
     is_compaction: bool = False
     compacted_by: str | None = None
+
+    def extra_context_chars(self) -> int:
+        return len(packify.pack(self.tool_calls))
+
+
+@runtime_checkable
+class TokenEstimatable(Protocol):
+    """Protocol for messages that consume context window space
+        beyond their `content` string, e.g. serialized tool calls
+        or stored details. Used by `hola.context.estimate_tokens`;
+        implemented by `Message` and `hola.session.models.Message`.
+    """
+    @property
+    def content(self) -> str:
+        """The message content string."""
+        ...
+
+    def extra_context_chars(self) -> int:
+        """Returns the number of characters of context consumed
+            beyond `content`; token conversion is handled by
+            `hola.context.estimate_tokens`.
+        """
+        ...
 
 
 class SessionProtocol(Protocol):

@@ -41,11 +41,7 @@ $task
 PLANNING_FINALIZATION_PROMPT_TEMPLATE = f"""{PLANNING_PROMPT_PREFIX}
 All PLANNING phase tasks have been completed. Finalize the plan so the EXECUTING \
 phase can begin working. If no further changes are necessary to the existing \
-plan, halt so the workflow can transition to the next phase.
-
-<original_request>
-$request
-</original_request>"""
+plan, halt so the workflow can transition to the next phase."""
 
 
 EXECUTING_PROMPT_TEMPLATE = """You are a workflow execution agent. You have been \
@@ -77,9 +73,9 @@ IMPORTANT: you must call exactly one of `accept_task` or `reject_task`.
 Call the `accept_task` only if the task was completed successfully.
 Call the `reject_task` only if the task was failed or is substantially incomplete.
 
-<request>
+<original_request>
 $request
-</request>
+</original_request>
 
 <task>
 $task
@@ -126,10 +122,6 @@ The final review agent rejected the work done to fulfill the original request.
 You must consider the rejection feedback and create a remediation plan to fix \
 any defficiencies and ensure the original request is properly fulfilled.
 
-<original_request>
-$request
-</original_request>
-
 <review_feedback>
 $review
 </review_feedback>"""
@@ -149,11 +141,7 @@ Mention relevant memory keys, files, and important details about previous tasks.
 
 <original_request>
 $request
-</original_request>
-
-<current_task>
-$task
-</current_task>"""
+</original_request>"""
 
 
 DONE_PROMPT_TEMPLATE = """You are the final summary agent for a workflow.
@@ -324,6 +312,8 @@ def generate_compaction_prompt(**kwargs) -> str:
     value_assert("request" in kwargs, "cannot generate prompt without request")
     if "task" not in kwargs:
         kwargs["task"] = "N/A"
+    elif "<current_task>" not in template:
+        template += "\n\n<current_task>\n$task\n</current_task>"
     addendum = kwargs.get('compaction_prompt_addendum', None)
     if addendum:
         template += f'\n\n{addendum}'

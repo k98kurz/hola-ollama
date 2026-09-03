@@ -61,3 +61,6 @@ class Message(SqlModel):
     def details(self, val: packify.SerializableType) -> None:
         self.data['details'] = packify.pack(val)
 
+    def extra_context_chars(self) -> int:
+        """Fulfill the TokenEstimatable contract."""
+        return len(self.data.get('details', None) or b'')

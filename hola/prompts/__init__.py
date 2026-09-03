@@ -7,11 +7,6 @@ from hola.prompts.adapters import (
     tool_enabled_chat_adapter,
     xml_workaround_chat_adapter,
 )
-from hola.prompts.compaction import (
-    calculate_context_size,
-    check_context_threshold,
-    estimate_tokens,
-)
 from hola.prompts.generators import (
     prompt_generator,
     generate_prompt,

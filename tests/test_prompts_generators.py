@@ -129,13 +129,16 @@ class TestPromptGenerators(unittest.TestCase):
     def test_compaction_prompt(self):
         result = generate_compaction_prompt(request="build a website")
         assert "build a website" in result, result
-        assert "N/A" in result, result
+        assert "<current_task>" not in result, result
         assert "compaction agent" in result, result
 
         result = generate_compaction_prompt(
             request="build a website", task="current task"
         )
         assert "current task" in result, result
+        assert "<current_task>" in result, result
+        assert result.index("</original_request>") < \
+            result.index("<current_task>"), result
 
         with self.assertRaises(ValueError):
             generate_compaction_prompt()
@@ -243,6 +246,19 @@ class TestPromptGenerators(unittest.TestCase):
             done_prompt_template="Done: $request",
         )
         assert result == "Done: test", result
+
+        result = generate_compaction_prompt(
+            request="test",
+            compaction_prompt_template="Compact: $request ($task)",
+        )
+        assert result == "Compact: test (N/A)", result
+
+        result = generate_compaction_prompt(
+            request="test", task="t",
+            compaction_prompt_template="Compact: $request\n"
+            "<current_task>\n$task\n</current_task>",
+        )
+        assert result.count("<current_task>") == 1, result
 
 
 if __name__ == '__main__':

@@ -5,16 +5,15 @@ Tests for compaction logic.
 from math import ceil
 from pathlib import Path
 from time import perf_counter
+from hola.context import estimate_tokens, calculate_context_size
 from hola.ollama.client import OllamaClient
-from hola.prompts.compaction import (
-    estimate_tokens,
-    calculate_context_size,
+from hola.session import Session
+from hola.session.compaction import (
     check_context_threshold,
     get_messages_to_compact,
     autocompact,
     COMPACTION_FAILED_MESSAGE,
 )
-from hola.session import Session
 from hola.session.models import Message as DBMessage
 from hola.session.storage import initialize
 from hola.types import Message, Role

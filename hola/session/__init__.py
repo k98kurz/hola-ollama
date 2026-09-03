@@ -2,6 +2,12 @@
 Hola session management system.
 """
 
+from hola.session.compaction import (
+    check_context_threshold,
+    get_messages_to_compact,
+    compact_messages,
+    autocompact,
+)
 from hola.session.exceptions import (
     SessionAlreadyExistsError,
     SessionDeleteError,
@@ -12,6 +18,11 @@ from hola.session.exceptions import (
     TempFileNotFoundError,
     TempFileError,
 )
+from hola.session.fsm import (
+    WorkflowEvent,
+    WorkflowFSM,
+    WorkflowState,
+)
 from hola.session.manager import (
     create_session,
     delete_session,
@@ -19,11 +30,6 @@ from hola.session.manager import (
     initialize,
     list_sessions,
     session_exists,
-)
-from hola.session.fsm import (
-    WorkflowEvent,
-    WorkflowFSM,
-    WorkflowState,
 )
 from hola.session.session import Session
 from hola.permissions import Permission

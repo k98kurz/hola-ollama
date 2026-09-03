@@ -5,9 +5,9 @@ Session class for Hola session management.
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
+from hola.context import estimate_tokens
 from hola.helpers import get_memory_key
 from hola.permissions import Permission
-from hola.prompts.compaction import estimate_tokens
 from hola.session.exceptions import (
     SessionDeleteError,
     SessionError,
