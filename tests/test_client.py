@@ -30,6 +30,7 @@ from hola.types import (
 )
 import asyncio
 import logging
+import time
 import unittest
 import httpx
 
@@ -235,6 +236,16 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             async for _ in await self.client.chat(request):
                 pass
 
+    async def test_http_status_error_nonstream(self):
+        request = ChatRequest(
+            model="nonexistentmodel",
+            messages=[Message(role=Role.USER, content="test")],
+            stream=False,
+        )
+
+        with self.assertRaises(OllamaRequestError):
+            await self.client.chat(request)
+
     async def test_model_error_load_model(self):
         with self.assertRaises(httpx.HTTPStatusError):
             await self.client.load_model("nonexistent")
@@ -325,6 +336,100 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         assert isinstance(response, GenerateResponse), type(response)
         assert response.done is True, response.done
         assert response.response is not None, response.response
+
+
+class TestRetryBehavior(unittest.IsolatedAsyncioTestCase):
+    """Retry/connection-error mapping for the four request paths,
+        using a real closed port so no server or mocks are needed.
+    """
+    def setUp(self):
+        self.max_retries = 3
+        self.retry_delay = 0.05
+        self.client = OllamaClient(
+            config=ClientConfig(
+                base_url="http://localhost:1",
+                timeout=5.0,
+                max_retries=self.max_retries,
+                retry_delay=self.retry_delay,
+            )
+        )
+
+    async def asyncTearDown(self):
+        await self.client.close()
+
+    def _assert_elapsed_retries(self, start: float) -> None:
+        total_backoff = self.retry_delay * (2 ** (self.max_retries - 1) - 1)
+        elapsed = time.monotonic() - start
+        assert elapsed >= 0.9 * total_backoff, (
+            f"Expected retry backoff sleeps (~{total_backoff:.2f}s) but "
+            f"took {elapsed:.3f}s",
+        )
+
+    async def test_config_rejects_invalid_max_retries(self):
+        with self.assertRaises(ValueError):
+            ClientConfig(max_retries=0)
+
+        with self.assertRaises(ValueError):
+            ClientConfig(retry_delay=-1.0)
+
+    async def test_request_errors_on_mutated_max_retries(self):
+        config = ClientConfig(base_url="http://localhost:1")
+        config.max_retries = 0
+        client = OllamaClient(config=config)
+        request = ChatRequest(
+            model=NON_THINKING_MODEL,
+            messages=[Message(role=Role.USER, content="test")],
+            stream=False,
+        )
+        try:
+            with self.assertRaises(ValueError):
+                await client.chat(request)
+        finally:
+            await client.close()
+
+    async def test_chat_nonstream_connection_error(self):
+        request = ChatRequest(
+            model=NON_THINKING_MODEL,
+            messages=[Message(role=Role.USER, content="test")],
+            stream=False,
+        )
+        start = time.monotonic()
+        with self.assertRaises(OllamaConnectionError):
+            await self.client.chat(request)
+        self._assert_elapsed_retries(start)
+
+    async def test_generate_nonstream_connection_error(self):
+        request = GenerateRequest(
+            model=NON_THINKING_MODEL,
+            prompt="test",
+            stream=False,
+        )
+        start = time.monotonic()
+        with self.assertRaises(OllamaConnectionError):
+            await self.client.generate(request)
+        self._assert_elapsed_retries(start)
+
+    async def test_chat_stream_connection_error(self):
+        request = ChatRequest(
+            model=NON_THINKING_MODEL,
+            messages=[Message(role=Role.USER, content="test")],
+        )
+        start = time.monotonic()
+        with self.assertRaises(OllamaConnectionError):
+            async for _ in await self.client.chat(request):
+                pass
+        self._assert_elapsed_retries(start)
+
+    async def test_generate_stream_connection_error(self):
+        request = GenerateRequest(
+            model=NON_THINKING_MODEL,
+            prompt="test",
+        )
+        start = time.monotonic()
+        with self.assertRaises(OllamaConnectionError):
+            async for _ in await self.client.generate(request):
+                pass
+        self._assert_elapsed_retries(start)
 
 
 if __name__ == "__main__":

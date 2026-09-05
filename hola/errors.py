@@ -15,25 +15,66 @@ def value_assert(condition: bool, message: str = 'invalid value') -> None:
         raise ValueError(message)
 
 
+def _recast_numeric(value: Any, expected_type: Any) -> float | None:
+    """Return `float(value)` when `value` is a non-bool `int` and
+        `expected_type` is `float`, per the PEP 484 numeric tower;
+        otherwise return `None`.
+    """
+    if  (   expected_type is float
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
+        return float(value)
+    return None
+
+
+def _resolve_custom_post_init(cls) -> Callable | None:
+    """Find the nearest user-defined `__post_init__` in `cls.__mro__`,
+        unwrapping `validated_dataclass` wrappers to the custom
+        `__post_init__` they captured.
+    """
+    for klass in cls.__mro__:
+        post_init = klass.__dict__.get('__post_init__')
+        if post_init is None:
+            continue
+        if getattr(post_init, '__is_validation_wrapper__', False):
+            return getattr(post_init, '__wrapped_post_init__', None)
+        return post_init
+    return None
+
+
 def validated_dataclass(cls):
     """Decorator that adds type validation to dataclasses.
-        Validates all fields including nested objects (Option D).
-        Uses strict validation with no coercion (Option A).
-        Provides detailed error messages (Option B).
+        Validates all fields including nested objects. Applies the PEP
+        484 numeric tower, recasting non-bool `int` values to `float`
+        for `float`-typed fields, including elements of `list` fields
+        and values of `dict` fields (normalized in place; dict keys
+        are validated but not recast). Rejects `bool` values for
+        `int` and `float` fields. Provides detailed error messages.
+        Chains to a custom `__post_init__` (this class's own, or the
+        nearest one in the MRO) after validation.
     """
-
     def validate_field(
             instance: Any,
             field_name: str,
             field_value: Any,
             field_type: type,
             class_name: str
-        ) -> None:
-        """Validate a single field value against its type. Raises
+        ) -> Any:
+        """Validate a single field value against its type. Returns the
+            normalized value, applying the PEP 484 numeric tower
+            (`int` recast to `float` for `float` fields, including
+            `list` elements and `dict` values, in place). Raises
             `TypeError` for an invalid type.
         """
         if field_type is Any:
-            return
+            return field_value
+
+        if field_type is int and isinstance(field_value, bool):
+            type_assert(
+                False,
+                f"{class_name}.{field_name} expected int, got bool"
+            )
 
         origin = get_origin(field_type)
         type_args = get_args(field_type)
@@ -44,26 +85,33 @@ def validated_dataclass(cls):
                 origin.__name__ == 'UnionType'
             ):
             if field_value is None and type(None) in type_args:
-                return
+                return field_value
             for arg in type_args:
                 if arg is type(None):
+                    continue
+                if arg is int and isinstance(field_value, bool):
                     continue
                 arg_origin = get_origin(arg)
                 if arg_origin is list:
                     if isinstance(field_value, list):
                         element_type = get_args(arg)[0] if get_args(arg) else Any
                         for i, element in enumerate(field_value):
-                            validate_field(
+                            normalized = validate_field(
                                 instance,
                                 f"{field_name}[{i}]",
                                 element,
                                 element_type,
                                 class_name
                             )
-                        return
+                            if normalized is not element:
+                                field_value[i] = normalized
+                        return field_value
+                recast = _recast_numeric(field_value, arg)
+                if recast is not None:
+                    return recast
                 try:
                     if isinstance(field_value, arg):
-                        return
+                        return field_value
                 except TypeError:
                     pass
             type_assert(
@@ -71,7 +119,6 @@ def validated_dataclass(cls):
                 f"{class_name}.{field_name} expected {field_type}, got "
                 f"{type(field_value).__name__}"
             )
-            return
 
         if origin is list:
             type_assert(
@@ -82,14 +129,16 @@ def validated_dataclass(cls):
             if type_args:
                 element_type = type_args[0]
                 for i, element in enumerate(field_value):
-                    validate_field(
+                    normalized = validate_field(
                         instance,
                         f"{field_name}[{i}]",
                         element,
                         element_type,
                         class_name
                     )
-            return
+                    if normalized is not element:
+                        field_value[i] = normalized
+            return field_value
 
         if origin is dict:
             type_assert(
@@ -107,14 +156,16 @@ def validated_dataclass(cls):
                         key_type,
                         class_name
                     )
-                    validate_field(
+                    normalized = validate_field(
                         instance,
                         f"{field_name}[{key!r}]",
                         value,
                         value_type,
                         class_name
                     )
-            return
+                    if normalized is not value:
+                        field_value[key] = normalized
+            return field_value
 
         if isinstance(field_type, type) and issubclass(field_type, Enum):
             type_assert(
@@ -122,7 +173,7 @@ def validated_dataclass(cls):
                 f"{class_name}.{field_name} expected {field_type.__name__}, "
                 f"got {type(field_value).__name__}: {field_value!r}"
             )
-            return
+            return field_value
 
         try:
             if is_dataclass(field_type):
@@ -131,12 +182,16 @@ def validated_dataclass(cls):
                     f"{class_name}.{field_name} expected {field_type.__name__}, "
                     f"got {type(field_value).__name__}"
                 )
-                return
+                return field_value
         except ImportError:
             pass
 
         if isinstance(field_type, type) and isinstance(field_value, field_type):
-            return
+            return field_value
+
+        recast = _recast_numeric(field_value, field_type)
+        if recast is not None:
+            return recast
 
         if isinstance(field_type, type):
             type_assert(
@@ -145,8 +200,14 @@ def validated_dataclass(cls):
                 f"{type(field_value).__name__}"
             )
 
+        return field_value
+
+    custom_post_init = _resolve_custom_post_init(cls)
+
     def __post_init__(self) -> None:
-        """Validate all fields after initialization."""
+        """Validate all fields after initialization, then run the
+            resolved custom `__post_init__` (if any).
+        """
         type_hints = get_type_hints(self.__class__)
 
         for field in fields(self.__class__):
@@ -157,13 +218,21 @@ def validated_dataclass(cls):
             if field_type is None:
                 continue
 
-            validate_field(
+            normalized = validate_field(
                 self,
                 field_name,
                 field_value,
                 field_type,
                 self.__class__.__name__
             )
+            if normalized is not None:
+                setattr(self, field_name, normalized)
+
+        if custom_post_init is not None:
+            custom_post_init(self)
+
+    __post_init__.__is_validation_wrapper__ = True
+    __post_init__.__wrapped_post_init__ = custom_post_init
 
     cls.__post_init__ = __post_init__
     return dataclass(cls, slots=True)

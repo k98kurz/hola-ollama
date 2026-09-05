@@ -2,10 +2,9 @@
 Ollama HTTP client for API interactions.
 """
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
-from typing import Self
+from typing import Self, TypeVar
 from hola.cache import AsyncLRUCache
 from hola.ollama.config import ClientConfig
 from hola.ollama.exceptions import (
@@ -38,6 +37,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 model_info_cache: AsyncLRUCache = AsyncLRUCache(maxsize=20)
+T = TypeVar("T")
 
 
 class OllamaClient:
@@ -60,33 +60,31 @@ class OllamaClient:
         )
         self._model_info_cache = cache if cache is not None else model_info_cache
 
-    @asynccontextmanager
-    async def _retry_context(
-            self,
-            max_retries: int | None = None,
-            retry_delay: float | None = None,
-            allowed_exception_classes: list[type] | None = None,
-        ) -> AsyncGenerator[None, None]:
-        """Context manager for retrying operations on connection errors."""
-        max_retries = (max_retries if max_retries is not None
-                       else self._config.max_retries)
-        retry_delay = (retry_delay if retry_delay is not None
-                       else self._config.retry_delay)
-        delay = retry_delay
+    async def _with_retries(self, func: Callable[[], Awaitable[T]]) -> T:
+        """Run `func` with retries on connection errors.
+            `httpx.ConnectError` and `httpx.TimeoutException` are
+            retried up to `config.max_retries` times; other `httpx`
+            errors are mapped to the corresponding `Ollama*` exception
+            and raised immediately.
+        """
+        max_retries = self._config.max_retries
+        delay = self._config.retry_delay
+
+        if max_retries < 1:
+            raise ValueError("max_retries must be >= 1")
 
         for attempt in range(max_retries):
             try:
-                yield
-                return
+                return await func()
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 if attempt == max_retries - 1:
                     logger.error(
-                        "Connection failed after %d attempts: %s",
+                        "Request failed after %d attempts: %s",
                         max_retries,
                         e,
                     )
                     raise OllamaConnectionError(
-                        f"Failed to connect after {max_retries} attempts"
+                        f"Request failed after {max_retries} attempts: {e}"
                     ) from e
 
                 logger.debug(
@@ -109,6 +107,25 @@ class OllamaClient:
                 logger.error("HTTP error: %s", e)
                 raise OllamaClientError(f"HTTP error: {e}") from e
 
+    async def _post(self, url: str, payload: dict) -> httpx.Response:
+        """POST `payload` to `url` and raise for status errors."""
+        response = await self._client.post(url, json=payload)
+        response.raise_for_status()
+        return response
+
+    async def _send_stream(self, url: str, payload: dict) -> httpx.Response:
+        """Open a streaming POST to `url`. The caller must `aclose()`
+            the returned response once finished.
+        """
+        request = self._client.build_request("POST", url, json=payload)
+        response = await self._client.send(request, stream=True)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            await response.aclose()
+            raise
+        return response
+
     async def chat(
             self, request: ChatRequest
         ) -> AsyncGenerator[ChatResponseChunk, None] | ChatResponse:
@@ -122,28 +139,28 @@ class OllamaClient:
             self, request: ChatRequest
         ) -> AsyncGenerator[ChatResponseChunk, None]:
         logger.debug("Starting chat request for model %s", request.model)
+        payload = self._serialize_chat_request(request)
+        response = await self._with_retries(
+            lambda: self._send_stream("/api/chat", payload)
+        )
 
-        async with self._retry_context():
-            async with self._client.stream(
-                    "POST",
-                    "/api/chat",
-                    json=self._serialize_chat_request(request),
-                ) as response:
-                response.raise_for_status()
-
-                async for chunk in self._parse_sse_stream(response):
-                    yield chunk
+        try:
+            async for chunk in self._parse_sse_stream(response):
+                yield chunk
+        except httpx.HTTPError as e:
+            raise OllamaConnectionError(f"Stream failed: {e}") from e
+        finally:
+            await response.aclose()
 
     async def _chat_nonstream(self, request: ChatRequest) -> ChatResponse:
         request_dict = self._serialize_chat_request(request)
         request_dict["stream"] = False
+        response = await self._with_retries(
+            lambda: self._post("/api/chat", request_dict)
+        )
+        data = response.json()
 
-        async with self._retry_context():
-            response = await self._client.post("/api/chat", json=request_dict)
-            response.raise_for_status()
-            data = response.json()
-
-            return ChatResponse(
+        return ChatResponse(
                 model=data["model"],
                 message=Message(
                     role=Role(data["message"]["role"]),
@@ -177,33 +194,30 @@ class OllamaClient:
             self, request: GenerateRequest
         ) -> AsyncGenerator[GenerateChunk, None]:
         logger.debug("Starting generate request for model %s", request.model)
+        payload = self._serialize_generate_request(request)
+        response = await self._with_retries(
+            lambda: self._send_stream("/api/generate", payload)
+        )
 
-        async with self._retry_context():
-            async with self._client.stream(
-                    "POST",
-                    "/api/generate",
-                    json=self._serialize_generate_request(request),
-                ) as response:
-                response.raise_for_status()
-
-                async for chunk in self._parse_generate_stream(response):
-                    yield chunk
+        try:
+            async for chunk in self._parse_generate_stream(response):
+                yield chunk
+        except httpx.HTTPError as e:
+            raise OllamaConnectionError(f"Stream failed: {e}") from e
+        finally:
+            await response.aclose()
 
     async def _generate_nonstream(
             self, request: GenerateRequest
         ) -> GenerateResponse:
         request_dict = self._serialize_generate_request(request)
         request_dict["stream"] = False
+        response = await self._with_retries(
+            lambda: self._post("/api/generate", request_dict)
+        )
+        data = response.json()
 
-        async with self._retry_context():
-            response = await self._client.post(
-                "/api/generate",
-                json=request_dict,
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            return GenerateResponse(
+        return GenerateResponse(
                 model=data["model"],
                 response=data["response"],
                 done=data["done"],
@@ -405,7 +419,9 @@ class OllamaClient:
 
         return result
 
-    async def _parse_sse_stream(self, response) -> ChatResponseChunk:
+    async def _parse_sse_stream(
+            self, response,
+        ) -> AsyncGenerator[ChatResponseChunk, None]:
         """Parse SSE streaming response."""
         async for line in response.aiter_lines():
             line = line.strip()

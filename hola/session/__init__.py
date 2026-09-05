@@ -5,6 +5,7 @@ Hola session management system.
 from hola.session.compaction import (
     check_context_threshold,
     get_messages_to_compact,
+    split_oversized_last_message,
     compact_messages,
     autocompact,
 )
