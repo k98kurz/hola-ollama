@@ -41,7 +41,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
 
     async def test_tool_registry_registration(self):
         """Test tool registration."""
-        def test_func(x: int, y: str) -> str:
+        def sample_func(x: int, y: str) -> str:
             return f"{x}:{y}"
 
         tool_def = ToolDefinition(
@@ -57,7 +57,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.registry.register_tool(tool_def, test_func)
+        self.registry.register_tool(tool_def, sample_func)
 
         retrieved = self.registry.get_tool("test_tool")
         assert retrieved is not None, retrieved
@@ -120,7 +120,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
 
     async def test_tool_def_attribute(self):
         """Test that tool_def attribute is set on function objects."""
-        def test_func(x: int, y: str) -> str:
+        def sample_func(x: int, y: str) -> str:
             return f"{x}:{y}"
 
         tool_def = ToolDefinition(
@@ -136,13 +136,13 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.registry.register_tool(tool_def, test_func)
+        self.registry.register_tool(tool_def, sample_func)
 
-        assert hasattr(test_func, "tool_def")
-        assert test_func.tool_def is not None
-        assert test_func.tool_def.name == "test_tool"
-        assert test_func.tool_def.description == "Test tool"
-        assert test_func.tool_def.parameters is not None
+        assert hasattr(sample_func, "tool_def")
+        assert sample_func.tool_def is not None
+        assert sample_func.tool_def.name == "test_tool"
+        assert sample_func.tool_def.description == "Test tool"
+        assert sample_func.tool_def.parameters is not None
 
         @tool(name="decorated_tool", description="Decorated tool")
         def decorated_func(a: int) -> int:
@@ -155,7 +155,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
     async def test_schema_generation_basic_types(self):
         """Test JSON schema generation for basic types."""
         @tool(name="test_tool", description="Test tool")
-        def test_func(
+        def sample_func(
             name: str,
             count: int,
             price: float,
@@ -185,7 +185,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
     async def test_schema_generation_optional_types(self):
         """Test JSON schema generation for optional types."""
         @tool(name="test_tool", description="Test tool")
-        def test_func(
+        def sample_func(
             name: str,
             count: int | None = None,
             tags: list[str] | None = None,
@@ -210,7 +210,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
     async def test_schema_generation_complex_types(self):
         """Test JSON schema generation for complex types."""
         @tool(name="test_tool", description="Test tool")
-        def test_func(
+        def sample_func(
             items: list[int],
             mapping: dict[str, float],
         ) -> dict:
@@ -274,7 +274,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
     async def test_parameter_type_validation(self):
         """Test parameter type validation for string, int, number, bool."""
         @tool(name="test_tool_string", description="Test tool")
-        def test_func_string(name: str) -> str:
+        def sample_string_func(name: str) -> str:
             return name
 
         tool_call = ToolCall(
@@ -290,7 +290,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         assert "got " in str(e.exception), e.exception
 
         @tool(name="test_tool_int", description="Test tool")
-        def test_func_int(count: int) -> int:
+        def sample_int_func(count: int) -> int:
             return count
 
         tool_call = ToolCall(
@@ -306,7 +306,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         assert "got " in str(e.exception), e.exception
 
         @tool(name="test_tool_float", description="Test tool")
-        def test_func_float(price: float) -> float:
+        def sample_float_func(price: float) -> float:
             return price
 
         tool_call = ToolCall(
@@ -322,7 +322,7 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         assert "got " in str(e.exception), e.exception
 
         @tool(name="test_tool_bool", description="Test tool")
-        def test_func_bool(enabled: bool) -> bool:
+        def sample_bool_func(enabled: bool) -> bool:
             return enabled
 
         tool_call = ToolCall(

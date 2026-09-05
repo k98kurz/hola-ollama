@@ -95,7 +95,7 @@ or
 python -m unittest
 ```
 
-There are currently 179 tests.
+There are currently 400 tests.
 
 ## Contributing
 
