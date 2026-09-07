@@ -32,7 +32,6 @@ import asyncio
 import logging
 import time
 import unittest
-import httpx
 
 
 THINKING_MODEL = "qwen3.5:2b"
@@ -247,7 +246,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
             await self.client.chat(request)
 
     async def test_model_error_load_model(self):
-        with self.assertRaises(httpx.HTTPStatusError):
+        with self.assertRaises(OllamaRequestError):
             await self.client.load_model("nonexistent")
 
     async def test_get_model_info_caching(self):
@@ -272,7 +271,7 @@ class TestClient(unittest.IsolatedAsyncioTestCase):
         await client.close()
 
     async def test_get_model_info_error(self):
-        with self.assertRaises(httpx.HTTPStatusError):
+        with self.assertRaises(OllamaRequestError):
             await self.client.get_model_info("nonexistent-model-xyz123")
 
     async def test_context_manager(self):
@@ -358,7 +357,7 @@ class TestRetryBehavior(unittest.IsolatedAsyncioTestCase):
         await self.client.close()
 
     def _assert_elapsed_retries(self, start: float) -> None:
-        total_backoff = self.retry_delay * (2 ** (self.max_retries - 1) - 1)
+        total_backoff = self.retry_delay * (2 ** self.max_retries - 1)
         elapsed = time.monotonic() - start
         assert elapsed >= 0.9 * total_backoff, (
             f"Expected retry backoff sleeps (~{total_backoff:.2f}s) but "
@@ -367,14 +366,16 @@ class TestRetryBehavior(unittest.IsolatedAsyncioTestCase):
 
     async def test_config_rejects_invalid_max_retries(self):
         with self.assertRaises(ValueError):
-            ClientConfig(max_retries=0)
+            ClientConfig(max_retries=-1)
+
+        assert ClientConfig(max_retries=0).max_retries == 0
 
         with self.assertRaises(ValueError):
             ClientConfig(retry_delay=-1.0)
 
     async def test_request_errors_on_mutated_max_retries(self):
         config = ClientConfig(base_url="http://localhost:1")
-        config.max_retries = 0
+        config.max_retries = -1
         client = OllamaClient(config=config)
         request = ChatRequest(
             model=NON_THINKING_MODEL,

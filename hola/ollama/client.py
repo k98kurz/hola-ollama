@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Self, TypeVar
 from hola.cache import AsyncLRUCache
+from hola.errors import type_assert, value_assert
 from hola.ollama.config import ClientConfig
 from hola.ollama.exceptions import (
     OllamaClientError,
@@ -60,38 +61,46 @@ class OllamaClient:
         )
         self._model_info_cache = cache if cache is not None else model_info_cache
 
-    async def _with_retries(self, func: Callable[[], Awaitable[T]]) -> T:
+    async def _with_retries(
+            self, func: Callable[[], Awaitable[T]], *,
+            retries: int | None = None,
+        ) -> T:
         """Run `func` with retries on connection errors.
             `httpx.ConnectError` and `httpx.TimeoutException` are
-            retried up to `config.max_retries` times; other `httpx`
-            errors are mapped to the corresponding `Ollama*` exception
-            and raised immediately.
+            retried up to `retries` (or `config.max_retries` when
+            `retries` is `None`) times; other `httpx` errors are mapped
+            to the corresponding `Ollama*` exception and raised
+            immediately. `retries` must be `>= 0`. Passing
+            `retries=0` disables retry/backoff while retaining
+            exception mapping.
         """
-        max_retries = self._config.max_retries
+        if retries is None:
+            retries = self._config.max_retries
+        type_assert(type(retries) is int, 'retries must be int')
+        value_assert(retries >= 0, "retries must be >= 0")
+
         delay = self._config.retry_delay
+        type_assert(type(delay) in (float, int), "config delay must be int|float")
 
-        if max_retries < 1:
-            raise ValueError("max_retries must be >= 1")
-
-        for attempt in range(max_retries):
+        for attempt in range(retries + 1):
             try:
                 return await func()
             except (httpx.ConnectError, httpx.TimeoutException) as e:
-                if attempt == max_retries - 1:
+                if attempt == retries:
                     logger.error(
-                        "Request failed after %d attempts: %s",
-                        max_retries,
+                        "Request failed after %d retries: %s",
+                        retries,
                         e,
                     )
                     raise OllamaConnectionError(
-                        f"Request failed after {max_retries} attempts: {e}"
+                        f"Request failed after {retries} retries: {e}"
                     ) from e
 
                 logger.debug(
-                    "Connection error, retrying in %.1fs (attempt %d/%d): %s",
+                    "Connection error, retrying in %.1fs (retry %d/%d): %s",
                     delay,
                     attempt + 1,
-                    max_retries,
+                    retries,
                     e,
                 )
                 await asyncio.sleep(delay)
@@ -110,6 +119,12 @@ class OllamaClient:
     async def _post(self, url: str, payload: dict) -> httpx.Response:
         """POST `payload` to `url` and raise for status errors."""
         response = await self._client.post(url, json=payload)
+        response.raise_for_status()
+        return response
+
+    async def _get(self, url: str) -> httpx.Response:
+        """GET `url` and raise for status errors."""
+        response = await self._client.get(url)
         response.raise_for_status()
         return response
 
@@ -234,29 +249,26 @@ class OllamaClient:
         logger.debug("Loading model %s (keep_alive: %s)", model, keep_alive)
         request_dict = {"model": model, "messages": [], "keep_alive": keep_alive}
 
-        response = await self._client.post(
-            "/api/chat",
-            json=request_dict,
+        await self._with_retries(
+            lambda: self._post("/api/chat", request_dict),
+            retries=1,
         )
-        response.raise_for_status()
         logger.info("Model %s loaded successfully", model)
 
     async def unload_model(self, model: str) -> None:
         """Explicit model unload."""
         logger.debug("Unloading model %s", model)
         request_dict = {"model": model, "messages": [], "keep_alive": "0"}
-        response = await self._client.post(
-            "/api/chat",
-            json=request_dict,
+        await self._with_retries(
+            lambda: self._post("/api/chat", request_dict),
+            retries=1,
         )
-        response.raise_for_status()
         logger.info("Model %s unloaded successfully", model)
 
     async def list_models(self) -> list[ModelInfo]:
         """List available models."""
         logger.debug("Listing available models")
-        response = await self._client.get("/api/tags")
-        response.raise_for_status()
+        response = await self._with_retries(lambda: self._get("/api/tags"))
         data = response.json()
 
         models = [
@@ -274,8 +286,7 @@ class OllamaClient:
     async def list_running_models(self) -> list[RunningModel]:
         """List currently loaded models."""
         logger.debug("Listing running models")
-        response = await self._client.get("/api/ps")
-        response.raise_for_status()
+        response = await self._with_retries(lambda: self._get("/api/ps"))
         data = response.json()
 
         models = [
@@ -297,11 +308,9 @@ class OllamaClient:
         if cached is not None:
             return cached
 
-        response = await self._client.post(
-            "/api/show",
-            json={"name": model},
+        response = await self._with_retries(
+            lambda: self._post("/api/show", {"name": model}),
         )
-        response.raise_for_status()
         data = response.json()
 
         model_info = data.get("model_info", {})
