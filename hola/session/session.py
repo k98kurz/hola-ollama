@@ -33,6 +33,9 @@ import os
 import fnmatch
 
 
+MAX_TASK_DESCRIPTION_LENGTH = 200
+
+
 def _match_path_with_glob(path: str, pattern: str) -> bool:
     """Match path against glob pattern, supporting ** for recursive matching."""
     path_parts = path.split('/')
@@ -647,12 +650,19 @@ class Session:
         phase = phase.upper()
         if not description or not description.strip():
             raise ValueError("Task description cannot be empty")
+        if len(description) > MAX_TASK_DESCRIPTION_LENGTH:
+            raise ValueError(
+                f"Task description cannot exceed "
+                f"{MAX_TASK_DESCRIPTION_LENGTH} characters "
+                f"(got {len(description)}). Shorten the description, "
+                f"move details into the notes, and call add_task again."
+            )
         self.task_sequences[phase] = self.task_sequences.get(phase, 0) + 1
         sequence = self.task_sequences[phase]
 
         memory_key = None
-        if notes is not None:
-            memory_key = get_memory_key(description)
+        if notes is not None and notes.strip():
+            memory_key = get_memory_key(f"{phase} {sequence}")
             self.memorize(memory_key, notes)
 
         task = Task({
@@ -705,34 +715,69 @@ class Session:
         changes = []
         descriptions = {t.sequence: t.description for t in tasks}
 
+        assignments = []
         if new_sequence < old_sequence:
             for seq in range(new_sequence, old_sequence):
                 task = task_map.get(seq)
                 if task:
                     old_seq = task.sequence
-                    task.sequence = seq + 1
-                    task.save()
-                    changes.append(f"{descriptions[old_seq]}: {old_seq}->{seq + 1}")
-            moved_task.sequence = new_sequence
-            moved_task.save()
+                    assignments.append((task, seq + 1))
+                    changes.append(
+                        f"{descriptions[old_seq]}: {old_seq}->{seq + 1}"
+                    )
+            assignments.append((moved_task, new_sequence))
             changes.append(
-                f"{descriptions[old_sequence]}: {old_sequence}->{new_sequence}"
+                f"{descriptions[old_sequence]}: "
+                f"{old_sequence}->{new_sequence}"
             )
         else:
             for seq in range(old_sequence + 1, new_sequence + 1):
                 task = task_map.get(seq)
                 if task:
                     old_seq = task.sequence
-                    task.sequence = seq - 1
-                    task.save()
-                    changes.append(f"{descriptions[old_seq]}: {old_seq}->{seq - 1}")
-            moved_task.sequence = new_sequence
-            moved_task.save()
+                    assignments.append((task, seq - 1))
+                    changes.append(
+                        f"{descriptions[old_seq]}: {old_seq}->{seq - 1}"
+                    )
+            assignments.append((moved_task, new_sequence))
             changes.append(
-                f"{descriptions[old_sequence]}: {old_sequence}->{new_sequence}"
+                f"{descriptions[old_sequence]}: "
+                f"{old_sequence}->{new_sequence}"
             )
 
+        self._renumber_tasks(phase, assignments)
+
+        self.task_sequences[phase] = max(max(task_map), new_sequence)
+
         return changes
+
+    def _renumber_tasks(
+            self, phase: str, assignments: list[tuple[Task, int]]
+        ) -> None:
+        """Apply new sequence numbers to tasks, migrating each task's
+            memo entry to the key for its new sequence. Reads all memo
+            values first so the shifts do not clobber one another, then
+            writes all new keys before forgetting old ones so an
+            interruption leaves orphaned duplicates, not lost data.
+        """
+        memos = {
+            task.memory_key: self.recall(task.memory_key)
+            for task, _ in assignments if task.memory_key
+        }
+        new_keys = set()
+        for task, new_seq in assignments:
+            if task.memory_key:
+                old_key = task.memory_key
+                value = memos[old_key]
+                task.memory_key = get_memory_key(f"{phase} {new_seq}")
+                new_keys.add(task.memory_key)
+                if value is not None:
+                    self.memorize(task.memory_key, value)
+            task.sequence = new_seq
+            task.save()
+        for old_key in memos:
+            if old_key not in new_keys:
+                self.forget(old_key)
 
     def delete_task(self, phase: str, sequence: int) -> None:
         """Delete a task by phase and sequence number."""
@@ -751,9 +796,9 @@ class Session:
         task = self.get_task(phase, sequence)
         if task:
             task.status = TaskStatus.COMPLETED
-            task.save()
-            if result is not None:
-                memory_key = get_memory_key(task.description)
+            if result is not None and result.strip():
+                memory_key = get_memory_key(f"{phase} {sequence}")
+                task.memory_key = memory_key
                 memo = self.recall(memory_key)
                 if not memo:
                     memo = {}
@@ -761,6 +806,7 @@ class Session:
                     memo = {"notes": memo}
                 memo["completion"] = result
                 self.memorize(memory_key, memo)
+            task.save()
 
     def accept_task(self, phase: str, sequence: int) -> None:
         """Mark a task as accepted."""
@@ -776,15 +822,17 @@ class Session:
         task = self.get_task(phase, sequence)
         if task:
             task.status = TaskStatus.REJECTED
+            if reason is not None and reason.strip():
+                memory_key = get_memory_key(f"{phase} {sequence}")
+                task.memory_key = memory_key
+                memo = self.recall(memory_key)
+                if not memo:
+                    memo = {}
+                if not isinstance(memo, dict):
+                    memo = {"notes": memo}
+                memo["rejection"] = reason
+                self.memorize(memory_key, memo)
             task.save()
-            memory_key = get_memory_key(task.description)
-            memo = self.recall(memory_key)
-            if not memo:
-                memo = {}
-            if not isinstance(memo, dict):
-                memo = {"notes": memo}
-            memo["rejection"] = reason
-            self.memorize(memory_key, memo)
 
     def accept(self) -> None:
         """Mark the workflow as accepted by the reviewer agent."""

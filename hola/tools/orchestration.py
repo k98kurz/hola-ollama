@@ -2,6 +2,7 @@
 Orchestration tools for task management in workflow phases.
 """
 
+from hola.session.session import MAX_TASK_DESCRIPTION_LENGTH
 from hola.tools.core import tool
 from hola.types import SessionProtocol
 
@@ -30,7 +31,9 @@ def view_tasks(
 
 @tool(
     name="add_task",
-    description="Create a new task with pending status. Returns task dict"
+    description="Create a new task with pending status. Description must be "
+    f"{MAX_TASK_DESCRIPTION_LENGTH} characters or fewer; put extra detail in "
+    "notes. Returns task dict"
 )
 def add_task(
         session: SessionProtocol, phase: str, description: str,
@@ -106,5 +109,7 @@ def accept(session: SessionProtocol) -> None:
 
 @tool(name="reject", description="Reject the work done with actionable feedback")
 def reject(session: SessionProtocol, reason: str) -> None:
-    """Mark the workflow as done and the work as acceptable."""
+    """Mark the workflow as rejected with actionable feedback by the
+        review agent.
+    """
     session.reject(reason)

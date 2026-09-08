@@ -277,7 +277,7 @@ class TestTaskLifecycle(unittest.TestCase):
         task = self.session.add_task(
             'PLANNING', 'Task with notes', 'Detailed notes here')
         assert task.memory_key is not None, task.memory_key
-        expected_key = get_memory_key('Task with notes')
+        expected_key = get_memory_key('PLANNING 1')
         assert task.memory_key == expected_key, task.memory_key
 
         notes = self.session.recall(task.memory_key)
@@ -300,6 +300,32 @@ class TestTaskLifecycle(unittest.TestCase):
             self.session.add_task('PLANNING', '   ')
         assert "cannot be empty" in str(e.exception).lower()
 
+    def test_add_task_description_too_long_raises_error(self):
+        """Test an over-long description raises with a helpful message."""
+        long_desc = 'x' * 201
+        with self.assertRaises(ValueError) as e:
+            self.session.add_task('PLANNING', long_desc)
+        message = str(e.exception).lower()
+        assert "200" in message, message
+        assert "characters" in message, message
+        assert "got 201" in message, message
+        assert "add_task again" in message, message
+
+    def test_add_task_description_too_long_burns_no_sequence(self):
+        """Test a rejected long description does not advance sequences."""
+        with self.assertRaises(ValueError):
+            self.session.add_task('PLANNING', 'x' * 201)
+
+        task = self.session.add_task('PLANNING', 'Valid task')
+        assert task.sequence == 1, task.sequence
+
+    def test_add_task_description_at_limit_succeeds(self):
+        """Test a description of exactly 200 characters is accepted."""
+        desc = 'x' * 200
+        task = self.session.add_task('PLANNING', desc)
+        assert task.sequence == 1, task.sequence
+        assert task.description == desc, len(task.description)
+
     def test_complete_task_marks_completed(self):
         """Test completing task marks status as COMPLETED."""
         task = self.session.add_task('EXECUTING', 'Task to complete')
@@ -314,7 +340,7 @@ class TestTaskLifecycle(unittest.TestCase):
         result = 'Final result data'
         self.session.complete_task('EXECUTING', 1, result)
 
-        memory_key = get_memory_key('Task to complete')
+        memory_key = get_memory_key('EXECUTING 1')
         stored = self.session.recall(memory_key)
         assert stored == {'completion': result}, stored
 
@@ -332,7 +358,7 @@ class TestTaskLifecycle(unittest.TestCase):
         reason = 'Implementation does not meet requirements'
         self.session.reject_task('REVIEWING', 1, reason)
 
-        memory_key = get_memory_key('Task to reject')
+        memory_key = get_memory_key('REVIEWING 1')
         stored = self.session.recall(memory_key)
         assert stored == {'rejection': reason}, stored
 
@@ -341,7 +367,7 @@ class TestTaskLifecycle(unittest.TestCase):
         task = self.session.add_task('EXECUTING', 'Test task', 'Initial notes')
         self.session.complete_task('EXECUTING', 1, 'Result: success')
 
-        memory_key = get_memory_key('Test task')
+        memory_key = get_memory_key('EXECUTING 1')
         stored = self.session.recall(memory_key)
         expected = {'notes': 'Initial notes', 'completion': 'Result: success'}
         assert stored == expected, stored
@@ -351,7 +377,7 @@ class TestTaskLifecycle(unittest.TestCase):
         task = self.session.add_task('REVIEWING', 'Test task 2', 'Initial notes')
         self.session.reject_task('REVIEWING', 1, 'Invalid approach')
 
-        memory_key = get_memory_key('Test task 2')
+        memory_key = get_memory_key('REVIEWING 1')
         stored = self.session.recall(memory_key)
         expected = {'notes': 'Initial notes', 'rejection': 'Invalid approach'}
         assert stored == expected, stored
@@ -421,6 +447,164 @@ class TestTaskLifecycle(unittest.TestCase):
             reloaded.state.context['reject_reason'])
 
 
+class TestTaskMemoryKeys(unittest.TestCase):
+    """Test cases for task memory key assignment and isolation."""
+    def setUp(self):
+        """Set up test fixtures."""
+        initialize(True)
+        self.session = Session("memory_key_test", portable=True)
+
+    def tearDown(self):
+        """Clean up after tests."""
+        hola_dir = Path.cwd() / ".hola"
+        if hola_dir.exists():
+            shutil.rmtree(hola_dir)
+
+    def test_duplicate_descriptions_get_distinct_memory_keys(self):
+        """Test identical descriptions produce distinct per-sequence keys."""
+        t1 = self.session.add_task('PLANNING', 'Same task', 'notes one')
+        t2 = self.session.add_task('PLANNING', 'Same task', 'notes two')
+        assert t1.memory_key != t2.memory_key
+        assert t1.memory_key == get_memory_key('PLANNING 1'), t1.memory_key
+        assert t2.memory_key == get_memory_key('PLANNING 2'), t2.memory_key
+        assert self.session.recall(t1.memory_key) == 'notes one'
+        assert self.session.recall(t2.memory_key) == 'notes two'
+
+    def test_complete_task_on_duplicate_does_not_clobber_sibling(self):
+        """Test completing one duplicate-description task leaves the other."""
+        t1 = self.session.add_task('EXECUTING', 'Same task', 'notes one')
+        self.session.add_task('EXECUTING', 'Same task', 'notes two')
+
+        self.session.complete_task('EXECUTING', 2, 'done')
+
+        assert self.session.recall(t1.memory_key) == 'notes one'
+        stored = self.session.recall(
+            self.session.get_task('EXECUTING', 2).memory_key
+        )
+        assert stored == {'notes': 'notes two', 'completion': 'done'}
+
+    def test_move_task_migrates_memory_keys(self):
+        """Test moving a task migrates its memory key to the new sequence."""
+        t1 = self.session.add_task('PLANNING', 'Task 1', 'notes one')
+        t2 = self.session.add_task('PLANNING', 'Task 2', 'notes two')
+
+        self.session.move_task('PLANNING', 2, 1)
+
+        reloaded1 = self.session.get_task('PLANNING', 1)
+        reloaded2 = self.session.get_task('PLANNING', 2)
+        assert reloaded1.description == 'Task 2', reloaded1.description
+        assert reloaded2.description == 'Task 1', reloaded2.description
+        assert reloaded1.memory_key == get_memory_key('PLANNING 1')
+        assert reloaded2.memory_key == get_memory_key('PLANNING 2')
+        assert self.session.recall(reloaded1.memory_key) == 'notes two'
+        assert self.session.recall(reloaded2.memory_key) == 'notes one'
+
+    def test_move_task_ripple_migrates_all_memories(self):
+        """Test a three-way reorder moves every memory to its new key."""
+        self.session.add_task('PLANNING', 'Task 1', 'notes one')
+        self.session.add_task('PLANNING', 'Task 2', 'notes two')
+        self.session.add_task('PLANNING', 'Task 3', 'notes three')
+
+        self.session.move_task('PLANNING', 3, 1)
+
+        reloaded1 = self.session.get_task('PLANNING', 1)
+        reloaded2 = self.session.get_task('PLANNING', 2)
+        reloaded3 = self.session.get_task('PLANNING', 3)
+        assert reloaded1.description == 'Task 3', reloaded1.description
+        assert reloaded2.description == 'Task 1', reloaded2.description
+        assert reloaded3.description == 'Task 2', reloaded3.description
+        assert reloaded1.memory_key == get_memory_key('PLANNING 1')
+        assert reloaded2.memory_key == get_memory_key('PLANNING 2')
+        assert reloaded3.memory_key == get_memory_key('PLANNING 3')
+        assert self.session.recall(reloaded1.memory_key) == 'notes three'
+        assert self.session.recall(reloaded2.memory_key) == 'notes one'
+        assert self.session.recall(reloaded3.memory_key) == 'notes two'
+
+    def test_complete_moved_task_merges_under_new_key(self):
+        """Test completing a moved task stores memo under its new slot key."""
+        self.session.add_task('PLANNING', 'Task A', 'notes A')
+        self.session.add_task('PLANNING', 'Task B', 'notes B')
+
+        self.session.move_task('PLANNING', 2, 1)
+        self.session.complete_task('PLANNING', 1, 'done')
+
+        updated = self.session.get_task('PLANNING', 1)
+        assert updated.description == 'Task B', updated.description
+        assert updated.memory_key == get_memory_key('PLANNING 1')
+        stored = self.session.recall(updated.memory_key)
+        assert stored == {
+            'notes': 'notes B', 'completion': 'done'
+        }, stored
+
+    def test_complete_task_sets_memory_key(self):
+        """Test completing a bare task stores result and sets memory_key."""
+        self.session.add_task('EXECUTING', 'Bare task')
+
+        self.session.complete_task('EXECUTING', 1, 'result data')
+
+        updated = self.session.get_task('EXECUTING', 1)
+        assert updated.memory_key == get_memory_key('EXECUTING 1')
+        stored = self.session.recall(updated.memory_key)
+        assert stored == {'completion': 'result data'}, stored
+
+    def test_reject_task_sets_memory_key(self):
+        """Test rejecting a bare task stores reason and sets memory_key."""
+        self.session.add_task('REVIEWING', 'Bare task')
+
+        self.session.reject_task('REVIEWING', 1, 'not up to standard')
+
+        updated = self.session.get_task('REVIEWING', 1)
+        assert updated.memory_key == get_memory_key('REVIEWING 1')
+        stored = self.session.recall(updated.memory_key)
+        assert stored == {'rejection': 'not up to standard'}, stored
+
+    def test_reject_task_blank_reason_stores_no_memory(self):
+        """Test a blank reason marks REJECTED but stores no memory."""
+        self.session.add_task('REVIEWING', 'Bare task')
+        self.session.add_task('REVIEWING', 'Second task')
+
+        self.session.reject_task('REVIEWING', 1, '')
+        self.session.reject_task('REVIEWING', 2, '   ')
+
+        updated1 = self.session.get_task('REVIEWING', 1)
+        updated2 = self.session.get_task('REVIEWING', 2)
+        assert updated1.status == TaskStatus.REJECTED
+        assert updated2.status == TaskStatus.REJECTED
+        assert updated1.memory_key is None, updated1.memory_key
+        assert updated2.memory_key is None, updated2.memory_key
+        assert len(self.session.list_memories()) == 0
+
+    def test_delete_task_after_completion_cleans_memory(self):
+        """Test deleting a completed bare task removes its memory entry."""
+        self.session.add_task('EXECUTING', 'Bare task')
+        self.session.complete_task('EXECUTING', 1, 'result data')
+        key = self.session.get_task('EXECUTING', 1).memory_key
+
+        self.session.delete_task('EXECUTING', 1)
+
+        assert self.session.recall(key) is None
+
+    def test_empty_notes_create_no_memory(self):
+        """Test empty or whitespace-only notes leave no memory entry."""
+        t1 = self.session.add_task('PLANNING', 'No notes', '')
+        t2 = self.session.add_task('PLANNING', 'Blank notes', '   ')
+        assert t1.memory_key is None, t1.memory_key
+        assert t2.memory_key is None, t2.memory_key
+        assert len(self.session.list_memories()) == 0
+
+    def test_empty_result_stores_no_memory(self):
+        """Test completing with an empty result leaves no memory entry."""
+        task = self.session.add_task('EXECUTING', 'Bare task')
+        assert task.memory_key is None, task.memory_key
+
+        self.session.complete_task('EXECUTING', 1, '   ')
+
+        updated = self.session.get_task('EXECUTING', 1)
+        assert updated.status == TaskStatus.COMPLETED
+        assert updated.memory_key is None, updated.memory_key
+        assert len(self.session.list_memories()) == 0
+
+
 class TestTaskMoveOperations(unittest.TestCase):
     """Test cases for task move and renumbering operations."""
     def setUp(self):
@@ -486,6 +670,41 @@ class TestTaskMoveOperations(unittest.TestCase):
         assert 'Task 3: 3->1' in changes, changes
         assert 'Task 1: 1->2' in changes, changes
         assert 'Task 2: 2->3' in changes, changes
+
+    def test_move_task_beyond_max_updates_sequence_cache(self):
+        """Test moving beyond the max sequence updates the in-memory cache."""
+        self.session.add_task('PLANNING', 'Task 1')
+        self.session.add_task('PLANNING', 'Task 2')
+        self.session.add_task('PLANNING', 'Task 3')
+
+        changes = self.session.move_task('PLANNING', 1, 5)
+        assert len(changes) == 3, changes
+        assert self.session.task_sequences['PLANNING'] == 5
+
+        task4 = self.session.add_task('PLANNING', 'Task 4')
+        task5 = self.session.add_task('PLANNING', 'Task 5')
+        assert task4.sequence != task5.sequence
+        moved = self.session.get_task('PLANNING', 5)
+        assert moved is not None
+        assert moved.description == 'Task 1', moved.description
+        assert moved.id != task5.id
+
+    def test_move_task_resyncs_stale_cache_from_db(self):
+        """Test a move resyncs a cache left stale by a parallel session."""
+        self.session.add_task('PLANNING', 'Task 1')
+        self.session.add_task('PLANNING', 'Task 2')
+
+        parallel = Session(self.session.session_id, portable=True)
+        parallel.add_task('PLANNING', 'Task 3')
+        assert self.session.task_sequences['PLANNING'] == 2
+
+        self.session.move_task('PLANNING', 1, 2)
+
+        task4 = self.session.add_task('PLANNING', 'Task 4')
+        assert task4.sequence == 4, task4.sequence
+        third = self.session.get_task('PLANNING', 3)
+        assert third is not None
+        assert third.id != task4.id
 
 
 class TestTaskPersistence(unittest.TestCase):

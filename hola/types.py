@@ -6,11 +6,15 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
 from hola.errors import validated_dataclass
 from hola.permissions import Permission
 from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
 import packify
+
+
+if TYPE_CHECKING:
+    from hola.session.models import Task
 
 
 __all__ = [
@@ -140,6 +144,38 @@ class SessionProtocol(Protocol):
 
     def recall(self, key: str) -> object:
         """Retrieve a value from session memory by key."""
+        ...
+
+    def add_task(
+            self, phase: str, description: str, notes: str | None = None
+        ) -> Task:
+        """Create a new task with pending status and return it."""
+        ...
+
+    def get_task(self, phase: str, sequence: int) -> Task | None:
+        """Get a task by phase and sequence number."""
+        ...
+
+    def list_tasks(
+            self, phase: str | None = None, status: str | None = None
+        ) -> list[Task]:
+        """List tasks, optionally filtered by phase and/or status."""
+        ...
+
+    def move_task(
+            self, phase: str, old_sequence: int, new_sequence: int
+        ) -> list[str]:
+        """Move a task to a new sequence number, renumbering affected tasks."""
+        ...
+
+    def delete_task(self, phase: str, sequence: int) -> None:
+        """Delete a task by phase and sequence number."""
+        ...
+
+    def complete_task(
+            self, phase: str, sequence: int, result: str | None = None
+        ) -> None:
+        """Mark a task as completed, optionally storing result in memory."""
         ...
 
     def accept_task(self, phase: str, sequence: int) -> None:
