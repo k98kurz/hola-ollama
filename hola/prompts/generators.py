@@ -120,7 +120,7 @@ $request
 PLANNING_RECOVER_FINAL_REJECTION_TEMPLATE = f"""{PLANNING_PROMPT_PREFIX}
 The final review agent rejected the work done to fulfill the original request.
 You must consider the rejection feedback and create a remediation plan to fix \
-any defficiencies and ensure the original request is properly fulfilled.
+any deficiencies and ensure the original request is properly fulfilled.
 
 <review_feedback>
 $review

@@ -44,9 +44,22 @@ source venv/bin/activate  # REQUIRED before ALL Python commands
 - Do NOT use `python -m unittest discover tests` when making small changes in
   files covered by specific test files. Just execute the correct test file. DO
   NOT RUN ALL TESTS ALL THE TIME.
+- Tests that call Ollama are EXPENSIVE. They burn CPU, take real time, and
+  grind the user's hardware. Treat every Ollama-calling test run as a costly
+  operation, not a free one.
+- Run an Ollama-calling test file ONCE, then read the full output. Do NOT
+  re-run the same file over and over with grep suffixes, different flags, or
+  minor variations. If you need something from the output, it is already
+  captured -- search it, don't re-run it.
+- NEVER re-run Ollama-calling tests in a loop: not after every small edit, not
+  during review, not "just to check". Make your changes, then run the relevant
+  tests ONE time. If you already ran them and made only doc/comment changes,
+  do NOT run them again.
 - Write concise, meaningful tests, not a thousand pointless tests. Test important
   details, not irrelevant shite. Don't write a dozen test classes with 2 cases each;
   test classes should bundle related test methods together.
+- Tries ALWAYS equals retries + 1.
+- Do NOT make unauthorized edits to tickets. Update ONLY the ticket status.
 
 ## Agent Memory
 

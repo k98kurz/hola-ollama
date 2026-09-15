@@ -247,11 +247,14 @@ class VerificationException(Exception):
 
 def retry_with_backoff(
         max_tries: int = 3, base_delay: float = 5.0, delay_mult: float = 2.0,
-        allowed_exception_classes: list[type] = None, logger: Logger = None
+        allowed_exception_classes: list[type] | None = None,
+        logger: Logger | None = None
     ) -> Callable:
     """Decorator for a method that can be retried with a back-off. If
         `allowed_exception_classes` is not supplied, the decorated
-        function will be retried on all exceptions.
+        function will be retried on all exceptions. Each failed attempt
+        is logged at warning level with its exception type and attempt
+        number; the final failure is re-raised for the caller to handle.
     """
     def decorator(fn: Callable) -> Callable:
         async def inner(*args, **kwargs):
@@ -264,13 +267,17 @@ def retry_with_backoff(
                     return res
                 except Exception as e:
                     if logger:
-                        logger.error(str(e))
+                        logger.warning(
+                            '%s failed (attempt %d/%d): %s: %s',
+                            getattr(fn, '__name__', str(fn)), i, max_tries,
+                            type(e).__name__, e,
+                        )
                     if i == max_tries:
-                        raise e
+                        raise
                     if  (   allowed_exception_classes
                             and type(e) not in allowed_exception_classes
                         ):
-                        raise e
+                        raise
                     await sleep(delay)
                     delay *= delay_mult
         return inner

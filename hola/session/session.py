@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 from hola.context import estimate_tokens
+from hola.errors import type_assert, value_assert
 from hola.helpers import get_memory_key
 from hola.permissions import Permission
 from hola.session.exceptions import (
@@ -146,18 +147,62 @@ class Session:
         m.estimated_tokens = estimate_tokens(m)
         m.save()
 
+    def ripple_renumber(self, start_sequence: int, increment: int = 2) -> None:
+        """Pulls all messages with a sequence greater than or equal to
+            `start_sequence`, adds `increment` to each sequence number,
+            then saves them back to the database. Useful for resolving
+            collisions during compactions. Updates the cached
+            `self.sequence` so later appends cannot collide with the
+            shifted messages.
+        """
+        type_assert(type(start_sequence) is int, 'start_sequence must be int')
+        type_assert(type(increment) is int, 'increment must be int')
+        messages = self.dbsession.messages().query().greater_or_equal(
+            'sequence', start_sequence
+        ).order_by('sequence', 'desc').get()
+        for m in messages:
+            m.sequence += increment
+            m.save()
+        self.sequence = max(
+            self.sequence, max((m.sequence for m in messages), default=0)
+        )
+
     def insert_compaction(
             self, model: str, phase: str, content: str,
             message_sequences: list[int],
         ) -> str:
         """Create a compaction message and mark the given message
             sequences as compacted by it. Returns the compaction
-            message ID.
+            message ID. The selection must contain at least one
+            non-compaction message of the phase; otherwise a
+            `ValueError` is raised. When the natural slot after the
+            newest selected message is occupied, the messages at and
+            above it are rippled forward by 2 to make room.
         """
-        compaction_seq = max(message_sequences) + 1
+        value_assert(
+            message_sequences, 'message_sequences cannot be empty'
+        )
+        non_compaction = self.dbsession.messages().query().equal(
+            'phase', phase
+        ).is_in(
+            'sequence', message_sequences
+        ).equal(
+            'is_compaction', False
+        ).first()
+        value_assert(
+            non_compaction is not None,
+            f"cannot compact only compaction messages for phase "
+            f"'{phase}': {message_sequences}"
+        )
+        candidate = max(message_sequences) + 1
+        collision = self.dbsession.messages().query().equal(
+            'sequence', candidate
+        ).first()
+        if collision is not None:
+            self.ripple_renumber(candidate)
         m = DBMessage({
             'session_id': self.session_id,
-            'sequence': compaction_seq,
+            'sequence': candidate,
             'role': Role.SYSTEM.value,
             'model': model,
             'phase': phase,
@@ -176,8 +221,8 @@ class Session:
         return m.id
 
     def get_history(
-            self, phase: str = None, model: str | None = None, limit: int = None,
-            only_since_last_compaction: bool = True
+            self, phase: str | None = None, model: str | None = None,
+            limit: int | None = None, only_since_last_compaction: bool = True
         ) -> list[OMessage]:
         """Get conversation history, optionally filtered by phase and
             model. `only_since_last_compaction` is only effective if
@@ -210,9 +255,9 @@ class Session:
                 m.role, m.content, thinking=m.thinking,
                 tool_calls=m.details.get('tool_calls'),
                 tokens=m.tokens, estimated_tokens=m.estimated_tokens,
-                model=m.model, sequence=m.sequence,
+                model=m.model or '', sequence=m.sequence,
                 id=m.id, is_compaction=m.is_compaction,
-                compacted_by=m.compacted_by,
+                compacted_by=m.compacted_by, call_id=m.call_id,
             )
             for m in results
         ]
@@ -236,8 +281,13 @@ class Session:
         elif phase is None:
             self.sequence = after_sequence
 
-    def add_tool_output(self, call_id: str, result: object) -> None:
-        """Set tool output by call ID. Stored as Message with Role.TOOL."""
+    def add_tool_output(
+            self, call_id: str, result: object, phase: str | None = None
+        ) -> None:
+        """Set tool output by call ID. Stored as Message with Role.TOOL.
+            Phase is optional; when omitted the output is phase-less and
+            excluded from phase-filtered history.
+        """
         self.sequence += 2
         m = DBMessage({
             'session_id': self.session_id,
@@ -245,6 +295,7 @@ class Session:
             'role': Role.TOOL.value,
             'content': '',
             'call_id': call_id,
+            'phase': phase,
         })
         m.details = {'result': result}
         m.estimated_tokens = estimate_tokens(m)

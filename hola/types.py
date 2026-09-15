@@ -49,6 +49,7 @@ class Message:
     id: str | None = None
     is_compaction: bool = False
     compacted_by: str | None = None
+    call_id: str | None = None
 
     def extra_context_chars(self) -> int:
         return len(packify.pack(self.tool_calls))
@@ -102,8 +103,8 @@ class SessionProtocol(Protocol):
         ...
 
     def get_history(
-            self, phase: str = None, model: str | None = None, limit: int = None,
-            only_since_last_compaction: bool = True
+            self, phase: str | None = None, model: str | None = None,
+            limit: int | None = None, only_since_last_compaction: bool = True
         ) -> list[Message]:
         """Get conversation history, optionally filtered by phase and
             model. `only_since_last_compaction` is only effective if
@@ -183,7 +184,7 @@ class SessionProtocol(Protocol):
         ...
 
     def reject_task(self, phase: str, sequence: int, reason: str) -> None:
-        """Mark the task as rejcted with a reason by the review agent."""
+        """Mark the task as rejected with a reason by the review agent."""
         ...
 
     def accept(self) -> None:
@@ -327,6 +328,6 @@ class LLMClient(Protocol):
 PromptGenerator = Callable[[...], str] # **kwargs -> str
 
 Adapter = Callable[
-    [str, list[Message], list[ToolDefinition], str, str | None],
+    [str, list[Message], list[ToolDefinition] | None, str, str | None],
     ChatRequest | GenerateRequest
 ]

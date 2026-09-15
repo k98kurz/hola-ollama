@@ -3,7 +3,7 @@ Adapter functions for transforming Message lists into provider-specific
 request formats.
 """
 
-from hola.types import ChatRequest, GenerateRequest, Message, Role
+from hola.types import Adapter, ChatRequest, GenerateRequest, Message, Role
 from hola.tools.compat import tools_to_xml
 from hola.tools.types import ToolDefinition
 
@@ -29,9 +29,9 @@ def _combine_non_system_messages(messages: list[Message]) -> str:
 def tool_enabled_chat_adapter(
         phase_instructions: str,
         messages: list[Message],
-        tools: list[ToolDefinition],
+        tools: list[ToolDefinition] | None = None,
         model_name: str = 'granite4.1:8b',
-        rag_cag: str = None,
+        rag_cag: str | None = None,
     ) -> ChatRequest:
     system_prompt = phase_instructions + '\n\n'
     if rag_cag:
@@ -59,9 +59,9 @@ def tool_enabled_chat_adapter(
 def xml_workaround_chat_adapter(
         phase_instructions: str,
         messages: list[Message],
-        tools: list[ToolDefinition],
+        tools: list[ToolDefinition] | None = None,
         model_name: str = 'granite4.1:8b',
-        rag_cag: str = None,
+        rag_cag: str | None = None,
     ) -> ChatRequest:
     """Transform messages into ChatRequest with XML tool definitions.
         Combines all system messages into one, includes tool definitions
@@ -100,9 +100,9 @@ def xml_workaround_chat_adapter(
 def generate_endpoint_adapter(
         phase_instructions: str,
         messages: list[Message],
-        tools: list[ToolDefinition],
+        tools: list[ToolDefinition] | None = None,
         model_name: str = 'granite4.1:8b',
-        rag_cag: str = None,
+        rag_cag: str | None = None,
     ) -> GenerateRequest:
     system = phase_instructions + '\n\n'
 
@@ -120,3 +120,10 @@ def generate_endpoint_adapter(
         prompt=prompt,
         system=system.strip() if system else None,
     )
+
+
+ADAPTERS: dict[str, Adapter] = {
+    'tool_enabled_chat_adapter': tool_enabled_chat_adapter,
+    'xml_workaround_chat_adapter': xml_workaround_chat_adapter,
+    'generate_endpoint_adapter': generate_endpoint_adapter,
+}

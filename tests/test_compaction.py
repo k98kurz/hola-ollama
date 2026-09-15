@@ -599,6 +599,106 @@ class TestSplitOversizedLastMessage(SessionTestCase):
         assert len(_tail_content_of(tail)) < 300
 
 
+class TestAutocompactAdapterResolution(unittest.TestCase):
+    """Autocompact adapter lookup resolves via the ADAPTERS registry
+        and rejects unknown names. No Ollama calls.
+    """
+    def setUp(self):
+        initialize(True)
+        self.session = Session('adapter_test', portable=True)
+
+    def tearDown(self):
+        _clean_hola()
+
+    def test_unknown_adapter_raises_value_error(self):
+        self.session.add_message(
+            MODEL, 'TEST', Message(role=Role.USER, content='compact me')
+        )
+        self.session.config = {
+            'models': {'DEFAULT': MODEL},
+            'adapters': {MODEL: 'not_a_real_adapter'},
+        }
+        with self.assertRaises(ValueError):
+            asyncio.run(autocompact(
+                self.session, None, 'TEST', force=True, request="Test"
+            ))
+
+
+class TestAutocompactRetries(unittest.TestCase):
+    """Autocompact retry and backoff behavior, exercised offline with a
+        `None` client so no Ollama calls are made. The `None` client
+        raises `AttributeError` on every attempt.
+    """
+    def setUp(self):
+        initialize(True)
+        self.session = Session('retry_test', portable=True)
+
+    def tearDown(self):
+        _clean_hola()
+
+    def _configure(self, **overrides):
+        config = {'models': {'DEFAULT': MODEL}}
+        config.update(overrides)
+        self.session.config = config
+        self.session.add_message(
+            MODEL, 'TEST', Message(role=Role.USER, content='compact me')
+        )
+
+    def test_retries_then_falls_back(self):
+        self._configure(
+            compaction_retries=1, compaction_retry_delay=0,
+            compaction_retry_delay_mult=2.0,
+        )
+        with self.assertLogs(
+            'hola.session.compaction', level='WARNING'
+        ) as cm:
+            result = asyncio.run(autocompact(
+                self.session, None, 'TEST', force=True, request="Test"
+            ))
+        assert result is not None
+        assert COMPACTION_FAILED_MESSAGE in result.content, result.content
+        warnings = [
+            r.getMessage() for r in cm.records if r.levelname == 'WARNING'
+        ]
+        assert len(warnings) == 2, warnings
+        assert 'attempt 1/2' in warnings[0], warnings
+        assert 'attempt 2/2' in warnings[1], warnings
+        assert all(
+            w.split('): ', 1)[-1].strip() for w in warnings
+        ), warnings
+        history = self.session.get_history(
+            'TEST', only_since_last_compaction=False
+        )
+        assert any(m.is_compaction for m in history), history
+
+    def test_backoff_respects_delay_and_multiplier(self):
+        self._configure(
+            compaction_retries=3, compaction_retry_delay=0.05,
+            compaction_retry_delay_mult=3.0,
+        )
+        start = perf_counter()
+        with self.assertLogs('hola.session.compaction', level='WARNING'):
+            asyncio.run(autocompact(
+                self.session, None, 'TEST', force=True, request="Test"
+            ))
+        elapsed = perf_counter() - start
+        # two sleeps: 0.05 + 0.15; a multiplier of 1 would total 0.10
+        assert elapsed >= 0.18, elapsed
+
+    def test_debug_reraises_without_retry(self):
+        self._configure(compaction_retries=3, compaction_retry_delay=0.05)
+        with self.assertLogs(
+            'hola.session.compaction', level='WARNING'
+        ) as cm:
+            with self.assertRaises(AttributeError):
+                asyncio.run(autocompact(
+                    self.session, None, 'TEST', force=True, debug=True,
+                    request="Test",
+                ))
+        warnings = [r for r in cm.records if r.levelname == 'WARNING']
+        assert len(warnings) == 1, [r.getMessage() for r in cm.records]
+
+
 class TestAutocompact(unittest.IsolatedAsyncioTestCase):
     """Real autocompact tests using a fixture and live Ollama."""
     def setUp(self):
@@ -799,6 +899,7 @@ class TestAutocompact(unittest.IsolatedAsyncioTestCase):
         if fail:
             config['models'] = {'DEFAULT': 'nonexistent-model'}
             config['adapters'] = {'nonexistent-model': adapter_name}
+            config['compaction_retry_delay'] = 0
         else:
             config['adapters'] = {MODEL: adapter_name}
         session.config = config
@@ -841,9 +942,12 @@ class TestAutocompact(unittest.IsolatedAsyncioTestCase):
     async def test_autocompact_fallback(self):
         for name in ADAPTERS:
             with self.subTest(adapter=name):
-                session, result = await self._run_autocompact(
-                    name, fail=True,
-                )
+                with self.assertLogs(
+                    'hola.session.compaction', level='WARNING'
+                ) as cm:
+                    session, result = await self._run_autocompact(
+                        name, fail=True,
+                    )
                 try:
                     assert result is not None, f'{name} returned None'
                     assert result.role == Role.SYSTEM, result.role
@@ -855,6 +959,17 @@ class TestAutocompact(unittest.IsolatedAsyncioTestCase):
                     assert len(history) >= 1
                     assert history[0].is_compaction is True
                     assert COMPACTION_FAILED_MESSAGE in history[0].content
+
+                    messages = [r.getMessage() for r in cm.records]
+                    assert any('compaction' in m.lower() for m in messages), (
+                        messages)
+                    warnings = [
+                        m for m in messages if 'failed (attempt' in m
+                    ]
+                    assert len(warnings) >= 2, messages
+                    assert all(
+                        m.split('): ', 1)[-1].strip() for m in warnings
+                    ), warnings
                 finally:
                     _clean_hola()
 

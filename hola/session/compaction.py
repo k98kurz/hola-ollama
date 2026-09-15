@@ -3,24 +3,26 @@ Compaction logic for managing conversation context.
 """
 
 from hola.context import calculate_context_size
-from hola.errors import type_assert
-from hola.prompts.adapters import (
-    tool_enabled_chat_adapter,
-    xml_workaround_chat_adapter,
-    generate_endpoint_adapter,
-)
+from hola.errors import retry_with_backoff, type_assert, value_assert
+from hola.prompts.adapters import ADAPTERS
 from hola.prompts.generators import generate_prompt
-from hola.tools.types import ToolCall
+from hola.tools.types import ToolCall, ToolDefinition
 from hola.types import (
     Adapter, ChatResponse, GenerateResponse, LLMClient, Message, Role,
     SessionProtocol, GenerateRequest,
 )
+import logging
 
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_CONTEXT: int = 4096
 DEFAULT_CONTEXT_THRESHOLD_RATIO: float = 0.7
 DEFAULT_COMPACTION_RATIO: float = 0.5
 DEFAULT_COMPACTION_RESERVE_RATIO: float = 0.25
+DEFAULT_COMPACTION_RETRIES: int = 2
+DEFAULT_COMPACTION_RETRY_DELAY: float = 5.0
+DEFAULT_COMPACTION_RETRY_DELAY_MULT: float = 2.0
 SPLIT_BOUNDARY_WINDOW: int = 512
 DIGEST_MAX_VALUE_CHARS: int = 100
 DIGEST_MAX_TOTAL_CHARS: int = 1024
@@ -264,7 +266,7 @@ def split_oversized_last_message(
 
 async def compact_messages(
         client: LLMClient, model: str, messages: list[Message],
-        adapter: Adapter, tools = [], **kwargs
+        adapter: Adapter, tools: list[ToolDefinition] | None = None, **kwargs
     ) -> ChatResponse | GenerateResponse:
     instructions = generate_prompt("COMPACTION", **kwargs)
     request = adapter(instructions, messages, tools, model)
@@ -291,7 +293,11 @@ async def autocompact(
         compaction message under a continuation header. Returns the
         compaction message, or `None` if nothing was compacted; if the
         only candidate is the phase's existing compaction message, it
-        is returned as-is.
+        is returned as-is. Failed attempts are retried with exponential
+        backoff, configured by `compaction_retries`,
+        `compaction_retry_delay`, and `compaction_retry_delay_mult`;
+        when `debug` is True the first failure is raised immediately
+        instead.
     """
     if not force and not check_context_threshold(session, phase):
         return
@@ -312,25 +318,46 @@ async def autocompact(
     type_assert(type(model) is str, 'missing model name config')
     adapter_config = session.config.get('adapters', {})
     adapter_name = adapter_config.get(model, 'tool_enabled_chat_adapter')
-    adapter = globals()[adapter_name]
-    result = None
+    value_assert(
+        adapter_name in ADAPTERS,
+        f"unknown adapter '{adapter_name}' for model '{model}'; "
+        f"valid names: {sorted(ADAPTERS)}"
+    )
+    adapter = ADAPTERS[adapter_name]
 
-    for _ in range(session.config.get('compaction_retries', 3)):
-        try:
-            response = await compact_messages(
-                client, model, messages, adapter, **kwargs
-            )
-            if isinstance(response, GenerateResponse):
-                result = Message(
-                    role=Role.SYSTEM, content=response.response, model=model,
-                )
-            else:
-                result = response.message
-            break
-        except Exception:
-            if debug:
-                raise
-    if not result:
+    retries = session.config.get(
+        'compaction_retries', DEFAULT_COMPACTION_RETRIES
+    )
+    attempts = max(0, retries) + 1
+    _compact = retry_with_backoff(
+        max_tries=1 if debug else attempts,
+        base_delay=session.config.get(
+            'compaction_retry_delay', DEFAULT_COMPACTION_RETRY_DELAY
+        ),
+        delay_mult=session.config.get(
+            'compaction_retry_delay_mult', DEFAULT_COMPACTION_RETRY_DELAY_MULT
+        ),
+        logger=logger,
+    )(compact_messages)
+    try:
+        response = await _compact(client, model, messages, adapter, **kwargs)
+    except Exception:
+        if debug:
+            raise
+        response = None
+
+    result = None
+    if isinstance(response, GenerateResponse):
+        result = Message(
+            role=Role.SYSTEM, content=response.response, model=model,
+        )
+    elif response is not None:
+        result = response.message
+    if result is None:
+        logger.error(
+            'compaction failed after %d attempts; falling back to '
+            'truncation message', attempts
+        )
         result = Message(
             role=Role.SYSTEM, content=COMPACTION_FAILED_MESSAGE, model=model
         )

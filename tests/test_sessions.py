@@ -31,6 +31,8 @@ import asyncio
 import packify
 
 
+MODEL = "granite4.1:3b"
+
 class TestSessionLifecycle(unittest.TestCase):
     """Test cases for session lifecycle management."""
     def setUp(self):
@@ -272,11 +274,11 @@ class TestSessionDataStorage(unittest.TestCase):
     def test_messages_crud(self):
         """Test message add, get, list, delete operations."""
         msg = OMessage(role=Role.USER, content="Hello")
-        self.session.add_message("granite4.1:3b", "INIT", msg)
+        self.session.add_message(MODEL, "INIT", msg)
 
         history = self.session.get_history()
         assert len(history) == 1, len(history)
-        assert history[0].model == "granite4.1:3b", history[0].model
+        assert history[0].model == MODEL, history[0].model
         assert history[0].content == "Hello", history[0].content
         assert history[0].tokens == 0, history[0].tokens
         assert history[0].estimated_tokens > 0, history[0].estimated_tokens
@@ -284,7 +286,7 @@ class TestSessionDataStorage(unittest.TestCase):
         initial_seq = self.session.sequence
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", "INIT", OMessage(role=Role.USER, content=str(i))
+                MODEL, "INIT", OMessage(role=Role.USER, content=str(i))
             )
         assert self.session.sequence == initial_seq + 10, self.session.sequence
 
@@ -294,7 +296,7 @@ class TestSessionDataStorage(unittest.TestCase):
             OMessage(role=Role.USER, content="How are you?"),
         ]
         for msg in msgs:
-            self.session.add_message("granite4.1:3b", "INIT", msg)
+            self.session.add_message(MODEL, "INIT", msg)
 
         history = self.session.get_history()
         assert len(history) == 9, len(history)
@@ -328,11 +330,11 @@ class TestSessionDataStorage(unittest.TestCase):
             tool_calls=[call1, call2],
         )
 
-        self.session.add_message("granite4.1:3b", "INIT", msg)
+        self.session.add_message(MODEL, "INIT", msg)
 
         history = self.session.get_history()
         assert len(history) == 1, len(history)
-        assert history[0].model == "granite4.1:3b", history[0].model
+        assert history[0].model == MODEL, history[0].model
         retrieved_msg = history[0]
         assert retrieved_msg.content == "I'll help you with that", (
             retrieved_msg.content)
@@ -353,11 +355,11 @@ class TestSessionDataStorage(unittest.TestCase):
         """Test message history filtering by limit, model, and phase."""
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", "EXECUTING",
+                MODEL, "EXECUTING",
                 OMessage(role=Role.USER, content=f"Exec {i}")
             )
             self.session.add_message(
-                "granite4.1:3b", "PLANNING",
+                MODEL, "PLANNING",
                 OMessage(role=Role.USER, content=f"Plan {i}")
             )
 
@@ -373,7 +375,7 @@ class TestSessionDataStorage(unittest.TestCase):
 
         for i in range(20):
             self.session.add_message(
-                "granite4.1:3b", "INIT", OMessage(role=Role.USER, content=str(i))
+                MODEL, "INIT", OMessage(role=Role.USER, content=str(i))
             )
 
         history = self.session.get_history(limit=5)
@@ -392,7 +394,7 @@ class TestSessionDataStorage(unittest.TestCase):
 
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", "INIT", OMessage(role=Role.USER, content=f"Msg {i}")
+                MODEL, "INIT", OMessage(role=Role.USER, content=f"Msg {i}")
             )
 
         history = self.session.get_history()
@@ -437,6 +439,118 @@ class TestSessionDataStorage(unittest.TestCase):
 
         outputs = self.session.list_tool_outputs()
         assert len(outputs) == 3, len(outputs)
+
+    def test_tool_output_phase_and_call_id_mapping(self):
+        """Tool outputs accept an optional phase and get_history maps
+            call_id onto the returned message.
+        """
+        self.session.add_tool_output("call_phased", {"v": 1}, phase="EXEC")
+        self.session.add_tool_output("call_plain", {"v": 2})
+
+        phased = self.session.get_history(
+            "EXEC", only_since_last_compaction=False
+        )
+        assert any(m.call_id == "call_phased" for m in phased), phased
+        assert not any(m.call_id == "call_plain" for m in phased), phased
+
+        all_history = self.session.get_history()
+        by_call = {m.call_id: m for m in all_history if m.call_id}
+        assert "call_phased" in by_call, by_call
+        assert "call_plain" in by_call, by_call
+
+    def test_ripple_renumber(self):
+        """`ripple_renumber` shifts messages at or above a sequence
+            number and updates the cached sequence.
+        """
+        for i in range(4):
+            self.session.add_message(
+                MODEL, "TEST", OMessage(role=Role.USER, content=str(i))
+            )
+        # sequences now 2,4,6,8; cache is 8
+        self.session.ripple_renumber(5)
+        history = self.session.get_history(
+            "TEST", only_since_last_compaction=False
+        )
+        assert sorted(m.sequence for m in history) == [2, 4, 8, 10], history
+        assert self.session.sequence == 10, self.session.sequence
+
+        self.session.ripple_renumber(100)
+        history = self.session.get_history(
+            "TEST", only_since_last_compaction=False
+        )
+        assert sorted(m.sequence for m in history) == [2, 4, 8, 10], history
+
+    def test_insert_compaction_selection_validation(self):
+        """`insert_compaction` rejects empty and all-compaction
+            selections without partial writes, and accepts the normal
+            autocompact shape of a prior compaction plus real messages.
+        """
+        for i in range(3):
+            self.session.add_message(
+                MODEL, "TEST", OMessage(role=Role.USER, content=str(i))
+            )
+        # sequences now 2,4,6
+        self.session.insert_compaction(MODEL, "TEST", "summary one", [2, 4, 6])
+        # compaction lands at 7; layout is 2,4,6,7
+        with self.assertRaises(ValueError):
+            self.session.insert_compaction(MODEL, "TEST", "dupe", [7])
+        with self.assertRaises(ValueError):
+            self.session.insert_compaction(MODEL, "TEST", "empty", [])
+        history = self.session.get_history(
+            "TEST", only_since_last_compaction=False
+        )
+        assert len([m for m in history if m.is_compaction]) == 1, history
+        assert sorted(m.sequence for m in history) == [2, 4, 6, 7], history
+
+        self.session.add_message(
+            MODEL, "TEST", OMessage(role=Role.USER, content="new")
+        )
+        # real message at 8; mixed selection is valid and lands at 9
+        self.session.insert_compaction(MODEL, "TEST", "summary two", [7, 8])
+        history = self.session.get_history(
+            "TEST", only_since_last_compaction=False
+        )
+        assert sorted(m.sequence for m in history) == [2, 4, 6, 7, 8, 9], (
+            history)
+        assert [m.sequence for m in history if m.is_compaction] == [7, 9]
+        compacted = {m.sequence for m in history if m.compacted_by}
+        assert {7, 8} <= compacted, compacted
+
+    def test_insert_compaction_ripple_on_collision(self):
+        """A collision at the natural compaction slot ripples the
+            messages above it forward by 2. The mixed selection here is
+            deliberately artificial: under the validated contract this
+            is the only reachable way to force the collision, so this
+            covers the safety net rather than a normal flow.
+        """
+        for i in range(5):
+            self.session.add_message(
+                MODEL, "TEST", OMessage(role=Role.USER, content=str(i))
+            )
+        # sequences now 2,4,6,8,10
+        self.session.insert_compaction(MODEL, "TEST", "summary one", [2, 4, 6])
+        # compaction lands at 7; layout is 2,4,6,7,8,10
+        # selecting already-compacted 6 plus 7 collides at candidate 8
+        self.session.insert_compaction(MODEL, "TEST", "summary two", [6, 7])
+        history = self.session.get_history(
+            "TEST", only_since_last_compaction=False
+        )
+        seqs = [m.sequence for m in history]
+        assert sorted(seqs) == [2, 4, 6, 7, 8, 10, 12], seqs
+        assert len(seqs) == len(set(seqs)), seqs
+        assert [m.sequence for m in history if m.is_compaction] == [7, 8]
+        compacted = {m.sequence for m in history if m.compacted_by}
+        assert {6, 7} <= compacted, compacted
+
+        self.session.add_message(
+            MODEL, "TEST", OMessage(role=Role.USER, content="after ripple")
+        )
+        history = self.session.get_history(
+            "TEST", only_since_last_compaction=False
+        )
+        seqs = [m.sequence for m in history]
+        assert sorted(seqs) == [2, 4, 6, 7, 8, 10, 12, 14], seqs
+        assert len(seqs) == len(set(seqs)), seqs
 
     def test_metadata_crud(self):
         """Test metadata set, get, list, delete operations."""
@@ -553,7 +667,7 @@ class TestSessionDataStorage(unittest.TestCase):
         """Test clearing history and resetting sequence."""
         for i in range(5):
             self.session.add_message(
-                "granite4.1:3b", "INIT", OMessage(role=Role.USER, content=str(i))
+                MODEL, "INIT", OMessage(role=Role.USER, content=str(i))
             )
 
         self.session.clear_history()
@@ -563,11 +677,11 @@ class TestSessionDataStorage(unittest.TestCase):
         assert self.session.sequence == 0, self.session.sequence
 
         self.session.add_message(
-            "granite4.1:3b", "INIT",
+            MODEL, "INIT",
             OMessage(role=Role.USER, content="Keep this")
         )
         self.session.add_message(
-            "granite4.1:3b", "EXECUTING",
+            MODEL, "EXECUTING",
             OMessage(role=Role.USER, content="Clear this")
         )
 
@@ -578,7 +692,7 @@ class TestSessionDataStorage(unittest.TestCase):
 
         seq_before = self.session.sequence
         self.session.add_message(
-            "granite4.1:3b", "INIT",
+            MODEL, "INIT",
             OMessage(role=Role.USER, content="New")
         )
         self.session.clear_history(after_sequence=seq_before)
@@ -589,24 +703,24 @@ class TestSessionDataStorage(unittest.TestCase):
     def test_compaction_aware_history(self):
         """Test compaction-aware history retrieval."""
         self.session.add_message(
-            "granite4.1:3b", "PLANNING",
+            MODEL, "PLANNING",
             OMessage(role=Role.ASSISTANT, content="Lalala clanking up a plan")
         )
         for i in range(3):
             self.session.add_message(
-                "granite4.1:3b", "EXECUTING",
+                MODEL, "EXECUTING",
                 OMessage(role=Role.USER, content=f"Before compaction {i}")
             )
 
         self.session.add_message(
-            "granite4.1:3b", "EXECUTING",
+            MODEL, "EXECUTING",
             OMessage(role=Role.SYSTEM, content="Summary of previous messages"),
             is_compaction=True
         )
 
         for i in range(2):
             self.session.add_message(
-                "granite4.1:3b", "EXECUTING",
+                MODEL, "EXECUTING",
                 OMessage(role=Role.USER, content=f"After compaction {i}")
             )
 
@@ -619,7 +733,7 @@ class TestSessionDataStorage(unittest.TestCase):
         assert history[2].content == "After compaction 1"
 
         assert isinstance(history[0], OMessage)
-        assert history[0].model == "granite4.1:3b"
+        assert history[0].model == MODEL
 
         history_all = self.session.get_history(
             phase='EXECUTING', only_since_last_compaction=False
@@ -785,7 +899,7 @@ class TestSessionIntegration(unittest.TestCase):
         retrieved_session = get_session(session_id, portable=True)
 
         retrieved_session.add_message(
-            "granite4.1:3b", "INIT", OMessage(role=Role.USER, content="Hello")
+            MODEL, "INIT", OMessage(role=Role.USER, content="Hello")
         )
         retrieved_session.memorize("name", "TestUser")
         retrieved_session.set_metadata("version", "1.0")
@@ -812,7 +926,7 @@ class TestSessionIntegration(unittest.TestCase):
 
         session = Session("mixed_test", portable=True)
         session.add_message(
-            "granite4.1:3b", "INIT", OMessage(role=Role.USER, content="Hello")
+            MODEL, "INIT", OMessage(role=Role.USER, content="Hello")
         )
         session.create_temp_file("data.txt", "temp data")
 
