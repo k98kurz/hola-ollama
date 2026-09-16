@@ -238,12 +238,21 @@ def validated_dataclass(cls):
     return dataclass(cls, slots=True)
 
 
-class PermissionDeniedError(Exception):
+class HolaError(Exception):
+    """Base class for library errors not specific to any LLM."""
+
+
+class ToolExecutionError(HolaError):
+    """Raised for tool execution failures."""
+
+
+class PermissionDeniedError(HolaError):
     """Raised when file operation is denied by permissions."""
 
 
-class VerificationException(Exception):
+class VerificationException(HolaError):
     """Raised when code violates the AST blacklist."""
+
 
 def retry_with_backoff(
         max_tries: int = 3, base_delay: float = 5.0, delay_mult: float = 2.0,

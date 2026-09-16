@@ -7,7 +7,7 @@ from collections import Counter
 from decimal import Decimal, InvalidOperation, getcontext, localcontext
 from typing import Any, Callable
 from hola.tools.core import tool
-from hola.ollama.exceptions import ToolExecutionError
+from hola.errors import ToolExecutionError
 from .linear import (
     _use_numpy, _use_float_mode, _is_scalar, _is_vector, _is_matrix,
     Vector, Matrix,

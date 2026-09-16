@@ -2,7 +2,9 @@
 Tests for scripts/linechecker.py docstring-aware line length checking.
 """
 
+import contextlib
 import importlib.util
+import io
 import shutil
 import subprocess
 import sys
@@ -129,7 +131,8 @@ class TestLineChecker(unittest.TestCase):
 
     def test_syntax_error_source_does_not_crash(self):
         src = 'def broken(:\n    """doc\n'
-        hard, soft, ws = linechecker.check_source(src)
+        with contextlib.redirect_stderr(io.StringIO()):
+            hard, soft, ws = linechecker.check_source(src)
         assert hard == 0, hard
         assert ws == 0, ws
 
@@ -189,13 +192,20 @@ class TestRecursiveLineChecker(unittest.TestCase):
         assert names == ['a.py'], names
 
     def test_collect_missing_path_exits(self):
-        with self.assertRaises(SystemExit):
+        with (
+                self.assertRaises(SystemExit),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
             linechecker.collect_files('temp/nonexistent_dir_xyz')
 
     def test_run_aggregates_counts_and_skips_binary(self):
-        hard, soft, ws, skipped = linechecker.run(
-            str(self.root), recursive=True, excludes=['excl']
-        )
+        with (
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+            hard, soft, ws, skipped = linechecker.run(
+                str(self.root), recursive=True, excludes=['excl']
+            )
         assert hard == 2, hard
         assert soft == 0, soft
         assert ws == 0, ws

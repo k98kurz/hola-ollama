@@ -4,7 +4,7 @@ permission methods).
 """
 
 from pathlib import Path
-from hola.session import Session
+from hola.session import Session, get_session
 from hola.session.storage import initialize
 from hola.permissions import Permission
 import os
@@ -216,7 +216,6 @@ class TestPermissionManagement(TestSessionPermissionSetup):
         path = "/tmp/persist.txt"
         self.session.set_permission(path, Permission(6))
 
-        from hola.session import get_session
         session2 = get_session("perm_test", portable=True)
 
         perm = session2.get_file_permission(path)

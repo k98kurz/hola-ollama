@@ -5,7 +5,7 @@ Tool system for function registration and execution.
 from __future__ import annotations
 from types import UnionType
 from typing import Any, Callable
-from hola.ollama.exceptions import ToolExecutionError
+from hola.errors import PermissionDeniedError, ToolExecutionError
 from hola.tools.types import (
     ToolCall,
     ToolCallFunction,
@@ -586,6 +586,15 @@ class ToolRegistry:
                 result = await func(**args)
             else:
                 result = func(**args)
+        except PermissionDeniedError as e:
+            logger.warning(
+                "Permission denied for tool %s: %s",
+                name,
+                e,
+            )
+            raise ToolExecutionError(
+                f"Permission denied for {name}: {e}"
+            ) from e
         except Exception as e:
             logger.error(
                 "Error executing tool %s: %s",

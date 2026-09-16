@@ -108,14 +108,13 @@ def analyze_source(
 def check_source(
         source: str, hardmax: int = 85, softmax: int | None = None,
     ) -> tuple[int, int, int]:
-    """Check source text for line length violations and whitespace
-        issues.
-        Returns (hard_violations, soft_warnings, whitespace_issues).
+    """Check source text for violations. Returns counts of hard
+        violations, soft warnings, and whitespace issues without
+        printing a report.
     """
     hard_lines, soft_lines, whitespace_lines = analyze_source(
         source, hardmax, softmax
     )
-    print_report(hard_lines, soft_lines, whitespace_lines, softmax)
     return len(hard_lines), len(soft_lines), len(whitespace_lines)
 
 

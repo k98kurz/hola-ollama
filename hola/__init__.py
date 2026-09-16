@@ -2,6 +2,12 @@
 Hola - An extensible harness for Ollama for local AI agent development.
 """
 
+from hola.errors import (
+    HolaError,
+    ToolExecutionError,
+    PermissionDeniedError,
+    VerificationException,
+)
 from hola.ollama import (
     OllamaClient,
     ModelWarmer,
@@ -34,7 +40,6 @@ from hola.tools import (
     execute_tool_call,
     ToolDefinition,
     ToolCall,
-    ToolExecutionError,
 )
 from hola.session import (
     Session,
@@ -50,3 +55,7 @@ from hola.session import (
     list_sessions,
     session_exists,
 )
+import logging
+
+
+logging.getLogger(__name__).addHandler(logging.NullHandler())

@@ -3,9 +3,9 @@ Bundled tools for agent filesystem and memory interaction.
 """
 
 from pathlib import Path
+from hola.errors import PermissionDeniedError, ToolExecutionError
 from hola.tools.core import tool
 from hola.types import SessionProtocol
-from hola.ollama.exceptions import ToolExecutionError
 import shutil
 import stat
 import time
@@ -28,14 +28,14 @@ def read(path: str, session: SessionProtocol) -> str:
         path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj).read:
-        raise ToolExecutionError(f"Read permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Read permission denied: {path_obj}")
 
     try:
         return path_obj.read_text(errors='strict')
     except FileNotFoundError:
         raise ToolExecutionError(f"File not found: {path_obj}")
     except PermissionError:
-        raise ToolExecutionError(f"Permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Permission denied: {path_obj}")
 
 
 @tool(name="write", description="Write content to file")
@@ -44,21 +44,15 @@ def write(path: str, content: str, session: SessionProtocol) -> None:
     if not path_obj.is_absolute():
         path_obj = Path(session.cwd) / path_obj
 
-    if not session.get_file_permission(path_obj.parent).read:
-        raise ToolExecutionError(
-            f"Read permission denied for parent: {path_obj.parent}"
-        )
-
     if not session.get_file_permission(path_obj.parent).write:
-        raise ToolExecutionError(
+        raise PermissionDeniedError(
             f"Write permission denied for parent: {path_obj.parent}"
         )
 
-    path_obj.parent.mkdir(parents=True, exist_ok=True)
-
     if not session.get_file_permission(path_obj).write:
-        raise ToolExecutionError(f"Write permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Write permission denied: {path_obj}")
 
+    path_obj.parent.mkdir(parents=True, exist_ok=True)
     path_obj.write_text(content)
 
 
@@ -72,7 +66,7 @@ def rm(path: str, session: SessionProtocol, r: bool = False) -> None:
         raise ToolExecutionError(f"Path not found: {path_obj}")
 
     if not session.get_file_permission(path_obj).write:
-        raise ToolExecutionError(f"Write permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Write permission denied: {path_obj}")
 
     if path_obj.is_file():
         path_obj.unlink()
@@ -99,15 +93,15 @@ def mv(src: str, dst: str, session: SessionProtocol) -> None:
         dst_obj = Path(session.cwd) / dst_obj
 
     if not session.get_file_permission(src_obj).write:
-        raise ToolExecutionError(f"Write permission denied: {src_obj}")
+        raise PermissionDeniedError(f"Write permission denied: {src_obj}")
 
     if not session.get_file_permission(dst_obj.parent).read:
-        raise ToolExecutionError(
+        raise PermissionDeniedError(
             f"Read permission denied for parent: {dst_obj.parent}"
         )
 
     if not session.get_file_permission(dst_obj.parent).write:
-        raise ToolExecutionError(
+        raise PermissionDeniedError(
             f"Write permission denied for parent: {dst_obj.parent}"
         )
 
@@ -128,15 +122,15 @@ def cp(src: str, dst: str, session: SessionProtocol, r: bool = False) -> None:
         dst_obj = Path(session.cwd) / dst_obj
 
     if not session.get_file_permission(src_obj).read:
-        raise ToolExecutionError(f"Read permission denied: {src_obj}")
+        raise PermissionDeniedError(f"Read permission denied: {src_obj}")
 
     if not session.get_file_permission(dst_obj.parent).read:
-        raise ToolExecutionError(
+        raise PermissionDeniedError(
             f"Read permission denied for parent: {dst_obj.parent}"
         )
 
     if not session.get_file_permission(dst_obj.parent).write:
-        raise ToolExecutionError(
+        raise PermissionDeniedError(
             f"Write permission denied for parent: {dst_obj.parent}"
         )
 
@@ -210,7 +204,7 @@ def grep(
             path_obj = Path(session.cwd) / path_obj
 
         if not session.get_file_permission(path_obj).read:
-            raise ToolExecutionError(f"Read permission denied: {path_obj}")
+            raise PermissionDeniedError(f"Read permission denied: {path_obj}")
 
         if not path_obj.exists():
             raise ToolExecutionError(f"Path not found: {path_obj}")
@@ -334,7 +328,7 @@ def ls(
         path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj).read:
-        raise ToolExecutionError(f"Read permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Read permission denied: {path_obj}")
 
     if not path_obj.exists():
         raise ToolExecutionError(f"Path not found: {path_obj}")
@@ -403,17 +397,17 @@ def edit(
         path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj).read:
-        raise ToolExecutionError(f"Read permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Read permission denied: {path_obj}")
 
     if not session.get_file_permission(path_obj).write:
-        raise ToolExecutionError(f"Write permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Write permission denied: {path_obj}")
 
     try:
         content = path_obj.read_text(errors='strict')
     except FileNotFoundError:
         raise ToolExecutionError(f"File not found: {path_obj}")
     except PermissionError:
-        raise ToolExecutionError(f"Permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Permission denied: {path_obj}")
 
     parts = content.split(old_string)
     if len(parts) < 2:
@@ -444,15 +438,10 @@ def append(path: str, content: str, session: SessionProtocol) -> None:
 
     if path_obj.exists():
         if not session.get_file_permission(path_obj).write:
-            raise ToolExecutionError(f"Write permission denied: {path_obj}")
-
-    if not session.get_file_permission(path_obj.parent).read:
-        raise ToolExecutionError(
-            f"Read permission denied for parent: {path_obj.parent}"
-        )
+            raise PermissionDeniedError(f"Write permission denied: {path_obj}")
 
     if not session.get_file_permission(path_obj.parent).write:
-        raise ToolExecutionError(
+        raise PermissionDeniedError(
             f"Write permission denied for parent: {path_obj.parent}"
         )
 
@@ -476,7 +465,7 @@ def find(
         path_obj = Path(session.cwd) / path_obj
 
     if not session.get_file_permission(path_obj).read:
-        raise ToolExecutionError(f"Read permission denied: {path_obj}")
+        raise PermissionDeniedError(f"Read permission denied: {path_obj}")
 
     if not path_obj.exists():
         raise ToolExecutionError(f"Path not found: {path_obj}")

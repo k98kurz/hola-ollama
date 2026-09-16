@@ -2,6 +2,7 @@
 E2E tests for calculate tool.
 """
 
+from hola.errors import ToolExecutionError
 from hola.session.session import Session
 from hola.tools.calculate.linear import set_numpy_mode
 from hola.tools.core import execute_tool_call, list_tools
@@ -248,7 +249,6 @@ class TestCalculate(unittest.TestCase):
         ]
         async def test():
             session = Session("test_calc_errors", portable=True)
-            from hola.ollama.exceptions import ToolExecutionError
             for expression, expected_error in ERROR_TESTS:
                 call = ToolCall(
                     function=ToolCallFunction(
@@ -489,7 +489,6 @@ class TestCalculate(unittest.TestCase):
         ]
         async def test():
             session = Session("test_calc_linear_errors", portable=True)
-            from hola.ollama.exceptions import ToolExecutionError
             for expression, expected_error in LINEAR_ALGEBRA_ERROR_TESTS:
                 call = ToolCall(
                     function=ToolCallFunction(

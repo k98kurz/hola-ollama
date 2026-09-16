@@ -17,7 +17,3 @@ class OllamaRequestError(OllamaClientError):
 
 class OllamaModelError(OllamaClientError):
     """Raised for model load/unload errors."""
-
-
-class ToolExecutionError(OllamaClientError):
-    """Raised for tool execution failures."""

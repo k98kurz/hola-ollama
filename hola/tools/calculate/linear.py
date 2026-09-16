@@ -7,7 +7,7 @@ Decimal (precision mode) and NumPy (float mode) implementations.
 from __future__ import annotations
 from decimal import Decimal
 from typing import Any
-from hola.ollama.exceptions import ToolExecutionError
+from hola.errors import ToolExecutionError
 import math
 
 

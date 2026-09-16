@@ -2,8 +2,10 @@
 Session exceptions for Hola session management.
 """
 
+from hola.errors import HolaError
 
-class SessionError(Exception):
+
+class SessionError(HolaError):
     """Base exception for session-related errors."""
     pass
 

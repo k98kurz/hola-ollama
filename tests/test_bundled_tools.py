@@ -6,6 +6,7 @@ import asyncio
 import unittest
 import shutil
 from pathlib import Path
+from hola.errors import ToolExecutionError
 from hola.session.session import Session
 from hola.session.storage import initialize
 from hola.tools.core import execute_tool_call, list_tools
@@ -326,8 +327,6 @@ class TestGrep(TestSessionBase):
 
             self.session.set_permission(str(test_file), Permission(0))
 
-            from hola.ollama.exceptions import ToolExecutionError
-
             call = ToolCall(
                 function=ToolCallFunction(
                     name="grep",
@@ -370,8 +369,6 @@ class TestRead(TestSessionBase):
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
-
-            from hola.ollama.exceptions import ToolExecutionError
 
             call_not_found = ToolCall(
                 function=ToolCallFunction(
@@ -443,8 +440,6 @@ class TestWrite(TestSessionBase):
 
     def test_write_failures(self):
         async def test():
-            from hola.ollama.exceptions import ToolExecutionError
-
             call = ToolCall(
                 function=ToolCallFunction(
                     name="write",
@@ -481,8 +476,6 @@ class TestWrite(TestSessionBase):
     def test_write_nested_permissions(self):
         async def test():
             self.permit(self.session.dbsession.cwd)
-
-            from hola.ollama.exceptions import ToolExecutionError
 
             dstdir = Path(self.session.dbsession.cwd) / "dstdir"
             dstdir.mkdir(exist_ok=True)
@@ -548,8 +541,6 @@ class TestRm(TestSessionBase):
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
             (test_dir / "file.txt").write_text("content")
-
-            from hola.ollama.exceptions import ToolExecutionError
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -624,8 +615,6 @@ class TestMv(TestSessionBase):
 
     def test_mv_failures(self):
         async def test():
-            from hola.ollama.exceptions import ToolExecutionError
-
             call = ToolCall(
                 function=ToolCallFunction(
                     name="mv",
@@ -726,8 +715,6 @@ class TestCp(TestSessionBase):
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir(exist_ok=True)
             (test_dir / "file.txt").write_text("content")
-
-            from hola.ollama.exceptions import ToolExecutionError
 
             call = ToolCall(
                 function=ToolCallFunction(
@@ -876,8 +863,6 @@ class TestLs(TestSessionBase):
             test_dir.mkdir(exist_ok=True)
             self.session.set_permission(str(test_dir), Permission(0))
 
-            from hola.ollama.exceptions import ToolExecutionError
-
             call = ToolCall(
                 function=ToolCallFunction(
                     name="ls",
@@ -1001,8 +986,6 @@ class TestEdit(TestSessionBase):
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
 
-            from hola.ollama.exceptions import ToolExecutionError
-
             call_not_found = ToolCall(
                 function=ToolCallFunction(
                     name="edit",
@@ -1107,8 +1090,6 @@ class TestAppend(TestSessionBase):
 
             test_file = Path(self.session.dbsession.cwd) / "test.txt"
             test_file.write_text("content")
-
-            from hola.ollama.exceptions import ToolExecutionError
 
             self.session.set_permission(str(test_file), Permission(0))
 
@@ -1292,8 +1273,6 @@ class TestFind(TestSessionBase):
             test_dir = Path(self.session.dbsession.cwd) / "testdir"
             test_dir.mkdir()
             (test_dir / "file.txt").write_text("content")
-
-            from hola.ollama.exceptions import ToolExecutionError
 
             self.session.set_permission(str(test_dir), Permission(0))
 
