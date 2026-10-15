@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hola-ollama"
+name = "hola-harness"
 version = "0.0.1"
 authors = [
   { name="k98kurz", email="k98kurz@gmail.com" },
@@ -11,16 +11,20 @@ authors = [
 description = "Extensible Ollama Harness for Robust Local Agents"
 readme = "readme.md"
 requires-python = ">=3.10"
+license = "LicenseRef-Pycelium-Reciprocal-License"
+license-files = ["license"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: ISC License (ISCL)",
   "Operating System :: OS Independent",
 ]
 dependencies = [
   "crossconfig == 0.0.8",
   "flying-state-machines == 0.3.1",
   "httpx == 0.27.1",
+  "packify == 0.3.4",
+  "sqloquent == 0.7.4",
+  "vicinus == 0.0.3",
 ]
 
 [project.urls]
@@ -45,6 +49,12 @@ exclude = [
   ".github",
   "tests",
   "AGENTS.md",
+  "notes",
+  "references",
+  "scripts",
+  "temp",
+  "tickets",
+  "venv",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -52,4 +62,10 @@ exclude = [
   ".github",
   "tests",
   "AGENTS.md",
+  "notes",
+  "references",
+  "scripts",
+  "temp",
+  "tickets",
+  "venv",
 ]

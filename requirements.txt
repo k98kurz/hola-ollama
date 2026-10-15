@@ -3,3 +3,4 @@ flying-state-machines==0.3.1
 httpx==0.27.1
 numpy==2.4.4
 sqloquent==0.7.4
+vicinus==0.0.3

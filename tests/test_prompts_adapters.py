@@ -53,23 +53,29 @@ class TestAdapters(unittest.TestCase):
         )
         combined = result.messages[0].content
         assert "Be concise." in combined, combined
-        assert "Extra rule." in combined, combined
         assert "Respond helpfully." in combined, combined
-        # Only one system message in the output list
+        # Non-leading system message is preserved in place
+        assert "Extra rule." not in combined, combined
+        assert result.messages[1].role == Role.USER
+        assert result.messages[2].role == Role.SYSTEM
+        assert result.messages[2].content == "Extra rule."
+        # Leading combined system plus preserved non-leading system
         sys_count = sum(
             1 for m in result.messages if m.role == Role.SYSTEM
         )
-        assert sys_count == 1, sys_count
+        assert sys_count == 2, sys_count
 
     def test_tool_enabled_preserves_order(self):
         messages = [self.sys_msg, self.user_msg, self.asst_msg, self.sys_msg]
         result = tool_enabled_chat_adapter(
             self.phase_instructions, messages, [],
         )
-        assert len(result.messages) == 3, len(result.messages)
-        # Index 0 is system, 1 is user, 2 is assistant
+        assert len(result.messages) == 4, len(result.messages)
+        # Index 0 is combined leading system; rest keep original order
         assert result.messages[1].content == "Hello"
         assert result.messages[2].content == "Hi there!"
+        assert result.messages[3].role == Role.SYSTEM
+        assert result.messages[3].content == "Be concise."
 
     def test_tool_enabled_tools(self):
         result = tool_enabled_chat_adapter(
@@ -124,11 +130,18 @@ class TestAdapters(unittest.TestCase):
         )
         combined = result.messages[0].content
         assert "Be concise." in combined
-        assert "Extra rule." in combined
+        assert "Respond helpfully." in combined
+        # Non-system content never leaks into the leading system message
+        assert "Hello" not in combined
+        # Non-leading system message is preserved in place
+        assert "Extra rule." not in combined
+        assert result.messages[1].role == Role.USER
+        assert result.messages[2].role == Role.SYSTEM
+        assert result.messages[2].content == "Extra rule."
         sys_count = sum(
             1 for m in result.messages if m.role == Role.SYSTEM
         )
-        assert sys_count == 1, sys_count
+        assert sys_count == 2, sys_count
 
     def test_xml_workaround_with_tools(self):
         messages = [self.sys_msg, self.user_msg]
@@ -186,7 +199,11 @@ class TestAdapters(unittest.TestCase):
             self.phase_instructions, messages, [],
         )
         assert 'Be concise.' in (result.system or '')
-        assert 'Extra rule.' in (result.system or '')
+        assert 'Respond helpfully.' in (result.system or '')
+        # Non-leading system messages are rendered into the prompt
+        assert 'Extra rule.' not in (result.system or '')
+        assert 'Extra rule.' in result.prompt
+        assert '<|im_start|>system' in result.prompt
         # Non-system messages in prompt
         assert 'Hello' in result.prompt
 

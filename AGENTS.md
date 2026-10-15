@@ -23,15 +23,8 @@ source venv/bin/activate  # REQUIRED before ALL Python commands
   they work. I'm sick of stupid mocks obscuring broken code.
 - Use the temp/ directory in the project for temporary files.
 - When testing ollama anything, use granite4.1:3b as the model.
-- For the Build agent: you MUST use todo.md to track your work for anything non-trivial
-  - Do NOT use the todowrite tool as it is broken
-  - Use ONLY todo.md with the read/write/edit tools
-  - Make sure you keep the todo.md file concise
-  - Include only the most important information necessary to survive context compactions
-  - Once something is done, REMOVE IT from todo.md; do NOT fill the file with
-    self-congratulatory notes
-  - When continuing after a recent compaction, read todo.md to stay on task
-  - ALWAYS read todo.md BEFORE writing to it; use the EDIT tool
+- For the Build agent: use a todo list to track your work for anything non-trivial
+  - If you see only `todowrite` and not `todoread`, immediately halt and report
 - If you encounter anything requiring a major change in plans, stop and discuss
 - Do not worry about backwards compatibility; this project is under development,
   incomplete, and has never been used anywhere.

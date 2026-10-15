@@ -8,20 +8,31 @@ from hola.tools.compat import tools_to_xml
 from hola.tools.types import ToolDefinition
 
 
+def _partition_messages(
+        messages: list[Message]
+    ) -> tuple[list[Message], list[Message]]:
+    """Split `messages` into the leading run of system messages and
+        the remainder.
+    """
+    prelude, rest, in_prelude = [], [], True
+    for m in messages:
+        if in_prelude and m.role is Role.SYSTEM:
+            prelude.append(m)
+            continue
+        in_prelude = False
+        rest.append(m)
+    return prelude, rest
+
+
 def _combine_system_messages(messages: list[Message]) -> str:
-    """Combine all system messages into single string."""
-    system_contents = [
-        #f"<|im_start|>system\n{m.content}<|im_end|>"
-        m.content
-        for m in messages if m.role.value == 'system'
-    ]
-    return '\n\n'.join(system_contents)
+    """Join the contents of `messages` with blank lines."""
+    return '\n\n'.join([m.content for m in messages])
 
 
-def _combine_non_system_messages(messages: list[Message]) -> str:
-    non_system = [m for m in messages if m.role.value != 'system']
+def _combine_non_leading_system_messages(messages: list[Message]) -> str:
+    """Render `messages` as chat-style prompt blocks."""
     parts = []
-    for m in non_system:
+    for m in messages:
         parts.append(f"<|im_start|>{m.role.value.lower()}\n{m.content}<|im_end|>")
     return '\n\n'.join(parts)
 
@@ -33,16 +44,17 @@ def tool_enabled_chat_adapter(
         model_name: str = 'granite4.1:8b',
         rag_cag: str | None = None,
     ) -> ChatRequest:
+    prelude, rest = _partition_messages(messages)
     system_prompt = phase_instructions + '\n\n'
     if rag_cag:
         system_prompt += rag_cag + '\n\n'
-    system_prompt += _combine_system_messages(messages)
+    system_prompt += _combine_system_messages(prelude)
     combined_messages = [Message(
         role=m.role,
         content=m.content,
         tool_calls=m.tool_calls,
         thinking=m.thinking,
-    ) for m in messages if m.role.value != 'system']
+    ) for m in rest]
 
     combined_messages.insert(0, Message(
         role=Role.SYSTEM,
@@ -64,26 +76,28 @@ def xml_workaround_chat_adapter(
         rag_cag: str | None = None,
     ) -> ChatRequest:
     """Transform messages into ChatRequest with XML tool definitions.
-        Combines all system messages into one, includes tool definitions
-        in XML format within system message for non-tool-calling models.
+        Combines leading system messages into one, includes tool
+        definitions in XML format within the system message for
+        non-tool-calling models.
     """
+    prelude, rest = _partition_messages(messages)
     system_prompt = phase_instructions + '\n\n'
 
     if tools:
         xml_tools, tool_instructions = tools_to_xml(tools)
-        system_prompt +=  xml_tools + '\n\n' + tool_instructions + '\n\n'
+        system_prompt += xml_tools + '\n\n' + tool_instructions + '\n\n'
 
     if rag_cag:
         system_prompt += rag_cag + '\n\n'
 
-    system_prompt += _combine_system_messages(messages)
+    system_prompt += _combine_system_messages(prelude)
 
     combined_messages = [Message(
         role=m.role,
         content=m.content,
         tool_calls=m.tool_calls,
         thinking=m.thinking,
-    ) for m in messages if m.role.value != 'system']
+    ) for m in rest]
 
     combined_messages.insert(0, Message(
         role=Role.SYSTEM,
@@ -104,17 +118,18 @@ def generate_endpoint_adapter(
         model_name: str = 'granite4.1:8b',
         rag_cag: str | None = None,
     ) -> GenerateRequest:
+    prelude, rest = _partition_messages(messages)
     system = phase_instructions + '\n\n'
 
     if tools:
         xml_tools, tool_instructions = tools_to_xml(tools)
-        system +=  xml_tools + '\n\n' + tool_instructions + '\n\n'
+        system += xml_tools + '\n\n' + tool_instructions + '\n\n'
 
     if rag_cag:
         system += rag_cag + '\n\n'
 
-    system += _combine_system_messages(messages)
-    prompt = _combine_non_system_messages(messages)
+    system += _combine_system_messages(prelude)
+    prompt = _combine_non_leading_system_messages(rest)
     return GenerateRequest(
         model=model_name,
         prompt=prompt,

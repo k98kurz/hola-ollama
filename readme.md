@@ -1,26 +1,33 @@
 # Hola
 
-An extensible harness for Ollama to enable development of robust, local AI agents
-with deterministic execution guarantees and reasonable security measures.
+An extensible library for building harnesses to enable development of robust, local
+AI agents with deterministic execution guarantees and reasonable security measures.
+
+Note: this project is still under development; it is not yet complete.
 
 ## Features / Status
 
 - [x] Finite State Machines for workflows
-- [ ] Basic RAG prompt generation
+- [x] Ollama client
+- [ ] llama.cpp, etc clients
+- [x] Basic RAG prompt generation
 - [ ] Vector db extension for RAG prompt generation
 - [ ] Context gates definable at each workflow step
+- [x] Persistent sessions
+- [ ] TOML-powered config system
+- [x] Phase-specific prompt generation && autocompaction
 - Tool system
   - [x] Tool calling for tool-enabled models
   - [x] XML-based workaround for models that do not natively support tools
   - A few bundled tools:
     - [x] FS IO: grep, find, ls, read, write, edit, append, rm, mv, cp
     - [x] Context Management: memorize, recall
-    - [ ] Arbitrary Computation: calculate, python (sandboxed)
-    - [ ] Orchestration:
-      - All phases: launch_subagent (launches a subagent with a prompt)
-      - PLAN phase: view_tasks, add_task, move_task, delete_task
-      - EXECUTE phase: complete_task
-      - REVIEW phase: reject_task, accept_task
+    - [x] Arbitrary Computation: calculate, python (sandboxed)
+    - Orchestration:
+      - [ ] All phases: launch_subagent (launches a subagent with a prompt)
+      - [x] PLAN phase: view_tasks, add_task, move_task, delete_task
+      - [x] EXECUTE phase: complete_task
+      - [x] REVIEW phase: reject_task, accept_task
     - No bash/cmd tool. The goal is to enforce ACL so agents can't run wild, so
       there will be a handful of useful tools to obviate the need for bash/cmd.
   - [x] Monadic tool call support (i.e. chaining of tools), passing outputs as
@@ -35,15 +42,21 @@ with deterministic execution guarantees and reasonable security measures.
 - [ ] Ability to include multiple models within an agentic workflow
 - [x] Rigid but extensible permission system
 - [ ] Plugin system for tools
-- [ ] Skill system supporting skill installation in hola-specific locations as well
-  as .agents/, .claude/, .opencode/, .cursor/ within the CWD
+- [ ] Skill system supporting skill loading from hola-specific locations as well
+      as .agents/ within the CWD
 - [ ] CLI tool for launching a session with a specified workflow/agent
 - [ ] File tree snapshot system to enable rolling back changes
 - [ ] Optional long-term, inter-session memory systems (e.g. soul.md)
 - [ ] Optional daemon with scheduled workflows/agents
 - [ ] Optional TUI
 
-## Running the Harness
+## Installation
+
+```
+pip install hola-harness
+```
+
+## Running Local Models
 
 This project focuses on providing tools for creating deterministic workflows for
 small, local models. The inference service supported is Ollama; llama.cpp support is
@@ -57,7 +70,7 @@ For Ollama, several environment variables are worth tuning:
   Valid values:
   - `f16`: 16-bit float, default
   - `q8_0`: 8-bit
-  - `q4_0`: 4-bit
+  - `q4_0`: 4-bit (warning: many models degrade at this quant)
 - `OLLAMA_NUM_PARALLEL`: number of parallel conversation threads to cache. Default is
   1, which causes KV cache eviction on every switch. For workflows with parallel
   agents of the same LLM, setting this to the number of agents will improve speed at
@@ -95,7 +108,7 @@ or
 python -m unittest
 ```
 
-There are currently 400 tests.
+There are currently 424 tests.
 
 ## Contributing
 
