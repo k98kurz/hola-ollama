@@ -276,6 +276,30 @@ async def compact_messages(
     return await client.chat(request)
 
 
+def _resolve_compaction_content(
+        response: ChatResponse | GenerateResponse | None
+    ) -> str:
+    """Returns the usable text from a compaction response, preferring
+        the response content and falling back to thinking output when
+        the content is empty or whitespace-only.
+    """
+    if isinstance(response, GenerateResponse):
+        content, thinking = response.response, response.thinking
+    elif isinstance(response, ChatResponse):
+        content = response.message.content
+        thinking = response.message.thinking
+    else:
+        return ''
+    if content and content.strip():
+        return content
+    if thinking and thinking.strip():
+        logger.warning(
+            'compaction response had empty content; using thinking output'
+        )
+        return thinking
+    return ''
+
+
 async def autocompact(
         session: SessionProtocol, client: LLMClient, phase: str,
         *, debug: bool = False, force: bool = False, **kwargs
@@ -346,26 +370,17 @@ async def autocompact(
             raise
         response = None
 
-    result = None
-    if isinstance(response, GenerateResponse):
-        result = Message(
-            role=Role.SYSTEM, content=response.response, model=model,
-        )
-    elif response is not None:
-        result = response.message
-    if result is None:
+    content = _resolve_compaction_content(response)
+    if not content:
         logger.error(
             'compaction failed after %d attempts; falling back to '
             'truncation message', attempts
         )
-        result = Message(
-            role=Role.SYSTEM, content=COMPACTION_FAILED_MESSAGE, model=model
-        )
+        content = COMPACTION_FAILED_MESSAGE
     if tail_section is not None:
-        result.content = f'{result.content}\n\n{tail_section}'
+        content = f'{content}\n\n{tail_section}'
 
     sequences = [m.sequence for m in messages]
-    session.insert_compaction(model, phase, result.content, sequences)
-    result.role = Role.SYSTEM
-    return result
+    session.insert_compaction(model, phase, content, sequences)
+    return Message(role=Role.SYSTEM, content=content, model=model)
 

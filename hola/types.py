@@ -246,6 +246,7 @@ class GenerateChunk:
     model: str
     response: str
     done: bool
+    thinking: str | None = None
     done_reason: str | None = None
     total_duration: int | None = None
     load_duration: int | None = None
@@ -260,6 +261,7 @@ class GenerateResponse:
     model: str
     response: str
     done: bool
+    thinking: str | None = None
     total_duration: int | None = None
     load_duration: int | None = None
     prompt_tokens: int | None = None

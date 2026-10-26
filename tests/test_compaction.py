@@ -20,11 +20,12 @@ from hola.session.compaction import (
     DIGEST_OMITTED_MARKER,
     TOOL_CALLS_HEADER,
     _format_tool_calls_digest,
+    _resolve_compaction_content,
 )
 from hola.session.models import Message as DBMessage
 from hola.session.storage import initialize
 from hola.tools.types import ToolCall, ToolCallFunction
-from hola.types import Message, Role
+from hola.types import ChatResponse, GenerateResponse, Message, Role
 import asyncio
 import json
 import shutil
@@ -423,6 +424,45 @@ class TestSplitMessage(unittest.TestCase):
         )
         digest = _format_tool_calls_digest([tc])
         assert digest == f'{TOOL_CALLS_HEADER}\n- [search] [query: cats]'
+
+
+class TestResolveCompactionContent(unittest.TestCase):
+    """Tests for _resolve_compaction_content."""
+    def _chat(self, content, thinking):
+        return ChatResponse(
+            model=MODEL, done=True,
+            message=Message(
+                role=Role.ASSISTANT, content=content, thinking=thinking,
+            ),
+        )
+
+    def test_prefers_chat_content(self):
+        response = self._chat('summary', 'reasoning')
+        assert _resolve_compaction_content(response) == 'summary'
+
+    def test_falls_back_to_chat_thinking(self):
+        response = self._chat('', 'reasoning')
+        assert _resolve_compaction_content(response) == 'reasoning'
+        response = self._chat('   \n', 'reasoning')
+        assert _resolve_compaction_content(response) == 'reasoning'
+
+    def test_falls_back_to_generate_thinking(self):
+        response = GenerateResponse(
+            model=MODEL, response='', done=True, thinking='reasoning',
+        )
+        assert _resolve_compaction_content(response) == 'reasoning'
+        response = GenerateResponse(
+            model=MODEL, response='summary', done=True,
+            thinking='reasoning',
+        )
+        assert _resolve_compaction_content(response) == 'summary'
+
+    def test_returns_empty_without_usable_text(self):
+        assert _resolve_compaction_content(None) == ''
+        response = self._chat('', None)
+        assert _resolve_compaction_content(response) == ''
+        response = self._chat('  ', '  ')
+        assert _resolve_compaction_content(response) == ''
 
 
 class TestSplitOversizedLastMessage(SessionTestCase):
