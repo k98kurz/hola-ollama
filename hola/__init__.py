@@ -2,6 +2,14 @@
 Hola - An extensible harness for Ollama for local AI agent development.
 """
 
+from hola.client import (
+    BaseClient,
+    ClientConfig,
+    ClientConnectionError,
+    ClientError,
+    ClientModelError,
+    ClientRequestError,
+)
 from hola.errors import (
     HolaError,
     ToolExecutionError,
@@ -12,7 +20,6 @@ from hola.ollama import (
     OllamaClient,
     ModelWarmer,
     RunningModel,
-    ClientConfig,
     WarmerConfig,
     OllamaClientError,
     OllamaConnectionError,

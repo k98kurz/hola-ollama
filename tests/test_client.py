@@ -4,8 +4,8 @@ Tests for OllamaClient functionality.
 
 from collections.abc import AsyncGenerator
 from hola.cache import AsyncLRUCache
+from hola.client import ClientConfig
 from hola.ollama.client import OllamaClient, model_info_cache
-from hola.ollama.config import ClientConfig
 from hola.ollama.exceptions import (
     OllamaConnectionError,
     OllamaRequestError,
@@ -366,12 +366,13 @@ class TestRetryBehavior(unittest.IsolatedAsyncioTestCase):
 
     async def test_config_rejects_invalid_max_retries(self):
         with self.assertRaises(ValueError):
-            ClientConfig(max_retries=-1)
+            ClientConfig(base_url="http://localhost:1", max_retries=-1)
 
-        assert ClientConfig(max_retries=0).max_retries == 0
+        config = ClientConfig(base_url="http://localhost:1", max_retries=0)
+        assert config.max_retries == 0
 
         with self.assertRaises(ValueError):
-            ClientConfig(retry_delay=-1.0)
+            ClientConfig(base_url="http://localhost:1", retry_delay=-1.0)
 
     async def test_request_errors_on_mutated_max_retries(self):
         config = ClientConfig(base_url="http://localhost:1")

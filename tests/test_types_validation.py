@@ -3,8 +3,8 @@ Tests for type validation in dataclasses.
 """
 
 from dataclasses import dataclass
+from hola.client.config import ClientConfig
 from hola.errors import validated_dataclass, value_assert
-from hola.ollama.config import ClientConfig
 from hola.types import (
     ChatRequest,
     GenerationOptions,
@@ -294,7 +294,7 @@ class TestBoolRejection(unittest.TestCase):
     def test_real_types_reject_bool_for_int_fields(self):
         """Test that real codebase types reject bools for int fields."""
         with self.assertRaises(TypeError):
-            ClientConfig(max_retries=True)
+            ClientConfig(base_url="http://localhost:1", max_retries=True)
 
         with self.assertRaises(TypeError):
             GenerationOptions(seed=True)
@@ -308,7 +308,11 @@ class TestNumericTowerRecast(unittest.TestCase):
 
     def test_client_config_recasts_int_to_float(self):
         """Test that ClientConfig recasts int timeouts to float."""
-        config = ClientConfig(timeout=30, retry_delay=2)
+        config = ClientConfig(
+            base_url="http://localhost:1",
+            timeout=30,
+            retry_delay=2,
+        )
         assert config.timeout == 30.0
         assert isinstance(config.timeout, float)
         assert config.retry_delay == 2.0
@@ -325,7 +329,7 @@ class TestNumericTowerRecast(unittest.TestCase):
     def test_bool_rejected_for_float_fields(self):
         """Test that bool is rejected for float fields."""
         with self.assertRaises(TypeError):
-            ClientConfig(timeout=True)
+            ClientConfig(base_url="http://localhost:1", timeout=True)
 
         with self.assertRaises(TypeError):
             GenerationOptions(temperature=True)
@@ -333,7 +337,7 @@ class TestNumericTowerRecast(unittest.TestCase):
     def test_non_numeric_still_rejected_for_float_fields(self):
         """Test that non-numeric values are still rejected."""
         with self.assertRaises(TypeError):
-            ClientConfig(timeout="30")
+            ClientConfig(base_url="http://localhost:1", timeout="30")
 
         with self.assertRaises(TypeError):
             GenerationOptions(temperature="hot")
