@@ -31,7 +31,7 @@ source venv/bin/activate  # REQUIRED before ALL Python commands
 - Do NOT use pytest. This project uses unittest EXCLUSIVELY.
 - Use bare assert statements where possible in tests, not `self.assertX`
   - Exception: use `with self.assertRaises(SomeErrorClass) as e:` when testing errors
-- Do NOT worry about backwards compatibility. This project is WIP and unused. Just
+- Do NOT worry about backwards compatibility. This project is an early alpha. Just
   make the changes.
 - Do NOT waste time calling bash or python just to print out summaries.
 - Do NOT use `python -m unittest discover tests` when making small changes in
