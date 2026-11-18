@@ -271,6 +271,61 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
         result = await execute_tool_call(tool_call)
         assert result == 10, result
 
+    async def test_tool_whitelist_allows_allowed_tool(self):
+        """Test that execute_tool_call allows tools in the whitelist."""
+        @tool(name="whitelisted_tool", description="Whitelisted tool")
+        def whitelisted(x: int) -> int:
+            return x * 2
+
+        tool_call = ToolCall(
+            function=ToolCallFunction(
+                name="whitelisted_tool",
+                arguments={"x": 5},
+            ),
+        )
+
+        result = await execute_tool_call(
+            tool_call, tool_whitelist={"whitelisted_tool"}
+        )
+        assert result == 10, result
+
+    async def test_tool_whitelist_blocks_disallowed_tool(self):
+        """Test that execute_tool_call raises ToolExecutionError for
+            tools not in the whitelist.
+        """
+        @tool(name="blocked_tool", description="Blocked tool")
+        def blocked(x: int) -> int:
+            return x
+
+        tool_call = ToolCall(
+            function=ToolCallFunction(
+                name="blocked_tool",
+                arguments={"x": 5},
+            ),
+        )
+
+        with self.assertRaises(ToolExecutionError) as e:
+            await execute_tool_call(
+                tool_call, tool_whitelist={"other_tool"}
+            )
+        assert "not allowed by whitelist" in str(e.exception), e.exception
+
+    async def test_tool_whitelist_empty_allows_all(self):
+        """Test that an empty whitelist allows tool execution."""
+        @tool(name="any_tool", description="Any tool")
+        def any_tool(x: int) -> int:
+            return x
+
+        tool_call = ToolCall(
+            function=ToolCallFunction(
+                name="any_tool",
+                arguments={"x": 5},
+            ),
+        )
+
+        result = await execute_tool_call(tool_call, tool_whitelist=set())
+        assert result == 5, result
+
     async def test_parameter_type_validation(self):
         """Test parameter type validation for string, int, number, bool."""
         @tool(name="test_tool_string", description="Test tool")

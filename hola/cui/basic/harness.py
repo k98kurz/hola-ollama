@@ -6,8 +6,10 @@ from hola.client import BaseClient
 from hola.errors import type_assert, value_assert
 from hola.prompts.adapters import tool_enabled_chat_adapter
 from hola.tools.core import execute_tool_call
-from hola.tools.types import ToolCall, ToolDefinition
-from hola.types import ChatResponse, ChatResponseChunk, Message, Role
+from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
+from hola.types import (
+    ChatResponse, ChatResponseChunk, Message, Role, SessionProtocol
+)
 import asyncio
 import contextlib
 import json
@@ -18,7 +20,8 @@ class ChatHarness:
     def __init__(
             self, client: BaseClient, model: str, console: Console,
             system: str = "", show_thinking: bool = False,
-            tools: list[ToolDefinition] = [], max_tool_calls: int = 999
+            tools: list[ToolDefinition] | None = None, max_tool_calls: int = 999,
+            session: SessionProtocol | None = None,
         ) -> None:
         """Initialize the harness. An optional `system` message is
             placed at the start of the conversation.
@@ -32,6 +35,7 @@ class ChatHarness:
         self.system = system
         self.reset_history()
         self.show_thinking = show_thinking
+        tools = tools or []
         type_assert(isinstance(tools, list), "tools must be list[ToolDefinition]")
         type_assert(
             all(isinstance(t, ToolDefinition) for t in tools),
@@ -41,6 +45,7 @@ class ChatHarness:
         type_assert(isinstance(max_tool_calls, int), "max_tool_calls must be int")
         value_assert(max_tool_calls > 0, "max_tool_calls must be positive")
         self.max_tool_calls = max_tool_calls
+        self.session = session
         self.verbose = False
         self.response_fsm = ResponseFSM()
         self._register_response_hooks()
@@ -86,6 +91,7 @@ class ChatHarness:
                 "stream": self.stream_response,
                 "thinking": self.show_thinking,
                 "verbose": self.verbose,
+                "system": self.system,
             }
             parts = text.split()
             if len(parts) == 2:
@@ -113,6 +119,63 @@ class ChatHarness:
             else:
                 self.show_thinking = True
                 await self.console.write_line("Thinking shown")
+
+        @self.slash("system", "change or view the system prompt")
+        async def system(text: str):
+            text = text[7:].strip()
+            if text:
+                self.system = text
+            await self.console.write_line(f"System prompt: {self.system}")
+
+        @self.slash("rollback", "rollback the message history one turn")
+        async def rollback(_: str):
+            if not self.history:
+                await self.console.write_line("nothing to roll back")
+                return
+            user_messages = []
+            for i, m in enumerate(self.history):
+                if m.role is Role.USER:
+                    user_messages.append(i)
+            if len(user_messages) < 2:
+                self.history.clear()
+                await self.console.write_line("roll back cleared history")
+                return
+            rollback_to = user_messages[-1]
+            self.history = [
+                m for i, m in enumerate(self.history)
+                if i < rollback_to
+            ]
+            await self.console.write_line("rolled back one turn")
+
+        @self.slash("reprint", "reprint message history")
+        async def reprint(_: str):
+            await self.reprint()
+
+        @self.slash("tool", "attempt a tool call")
+        async def tool(text: str):
+            text = text[5:].strip()
+            if text:
+                parts = text.split()
+                name, args = parts[0], parts[1:]
+                tool = ToolCallFunction(name, {})
+                tc = ToolCall(tool)
+                try:
+                    result = await execute_tool_call(
+                        tc, self.session, {t.name for t in self.tools}
+                    )
+                except Exception as e:
+                    result = e
+                await self.console.write_line(f"{result}")
+                return
+
+            lines = []
+            for t in self.tools:
+                params = {
+                    k: v['type']
+                    for k, v in t.parameters['properties'].items()
+                }
+                lines.append(f"{t.name}: {json.dumps(params, indent=1)}")
+            await self.console.write_line("\n".join(lines))
 
         @self.slash("clear", "start new session")
         @self.slash("new", "start new session")
@@ -185,6 +248,12 @@ class ChatHarness:
             if transition.on_event is ResponseEvent.WRITE_CONTENT:
                 self.response_fsm.add_transition_hook(
                     transition, self._write_prefix_hook
+                )
+            if  (   transition.from_state is ResponseState.WRITING_CONTENT
+                    and transition.on_event is ResponseEvent.CALL_TOOL
+                ):
+                self.response_fsm.add_transition_hook(
+                    transition, lambda: self.write_line("")
                 )
 
     async def _open_thought_hook(
@@ -288,7 +357,9 @@ class ChatHarness:
                 for tc in assistant.tool_calls:
                     i += 1
                     try:
-                        result = await execute_tool_call(tc)
+                        result = await execute_tool_call(
+                            tc, self.session, {t.name for t in self.tools}
+                        )
                     except Exception as error:
                         result = f"Tool execution error: {error}"
                     if self.verbose:
@@ -303,7 +374,9 @@ class ChatHarness:
                     ))
 
             if i >= self.max_tool_calls:
-                await self.console.write_line("[loop]: max_tool_calls reached or exceeded")
+                await self.console.write_line(
+                    "[loop]: max_tool_calls reached or exceeded"
+                )
 
     async def _stream_response(
             self, stream: AsyncGenerator[ChatResponseChunk, None],
@@ -402,3 +475,24 @@ class ChatHarness:
             thinking=thinking or None,
             tool_calls=tool_calls,
         )
+
+    async def reprint(self):
+        for m in self.history:
+            if m.role is Role.SYSTEM:
+                await self.console.write_line(f"[system] {m.content}")
+            elif m.role is Role.USER:
+                await self.console.write_line(f"[user] {m.content}")
+            elif m.role is Role.ASSISTANT:
+                if m.thinking:
+                    await self.console.write_line(
+                        f"<thought>\n{m.thinking}\n</thought>"
+                    )
+                if m.content:
+                    await self.console.write_line(f"[assistant] {m.content}")
+                for tc in m.tool_calls or []:
+                    await self.console.write_line(
+                        f"<call id={tc.call_id} name={tc.function.name} "
+                        f"args={json.dumps(tc.function.arguments)} />"
+                    )
+            elif m.role is Role.TOOL:
+                await self.console.write_line(f"[tool] {m.content}")

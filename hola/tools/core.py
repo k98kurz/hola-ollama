@@ -530,12 +530,16 @@ class ToolRegistry:
 
     async def execute_tool_call(
             self, tool_call: ToolCall, session: SessionProtocol | None = None,
+            tool_whitelist: set[str] | None = None
         ) -> Any:
         name = tool_call.function.name
         func = self._functions.get(name)
 
         if func is None:
             raise ToolExecutionError(f"Tool not found: {name}")
+
+        if tool_whitelist and name not in tool_whitelist:
+            raise ToolExecutionError(f"Tool not allowed by whitelist: {name}")
 
         args = tool_call.function.arguments.copy()
         original_args = args.copy()
@@ -652,12 +656,12 @@ def list_tools() -> list[ToolDefinition]:
 
 
 async def execute_tool_call(
-        tool_call: ToolCall,
-        session: SessionProtocol | None = None,
+        tool_call: ToolCall, session: SessionProtocol | None = None,
+        tool_whitelist: set[str] | None = None,
     ) -> Any:
     """Execute tool call using global registry. Supports monadic
         tool calling where nested ToolCall objects can appear as
         parameter values. Nested calls are executed recursively before
         the parent call.
     """
-    return await _registry.execute_tool_call(tool_call, session)
+    return await _registry.execute_tool_call(tool_call, session, tool_whitelist)
