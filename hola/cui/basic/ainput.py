@@ -21,31 +21,60 @@ HISTORY_SIZE = 10
 POLL_INTERVAL = 0.01
 ESC_TIMEOUT = 0.01
 
+# --- Control characters ---
+CTRL_BACKSPACE = "\x08"
+CTRL_DEL = "\x7f"
+CTRL_D_EOF = "\x04"
+ESC = "\x1b"
+CTRL_E_BLOCK = "\x05"
+CTRL_C_CANCEL = "\x03"
+
+# --- Arrow sequences (bytes following ESC) ---
+ARROW_UP_SEQS = ("[A", "OA")
+ARROW_DOWN_SEQS = ("[B", "OB")
+
+# --- ANSI terminal sequences ---
+CR = "\r"
+LF = "\n"
+CLEAR_LINE = f"{ESC}[K"
+CLEAR_ENTIRE_LINE = f"{ESC}[2K"
+MOVE_DOWN_1 = f"{ESC}[1B"
+MOVE_TO_LINE_START = f"{ESC}[1G"
+ERASE_LAST_CHAR = "\b \b"
+
+
+def ansi_move_up(n: int) -> str:
+    """Return the ANSI sequence to move the cursor up `n` lines."""
+    return f"{ESC}[{n}A"
+
 
 class BlockRequest:
     """Sentinel returned by ``ainput`` when Ctrl-E requests block mode."""
 
 
 class Console:
-    """Manages an asynchronous prompt, line editing, history, and
-        output that may be printed while the prompt is active.
+    """Manages an asynchronous prompt, line editing, history, and output
+        that may be printed while the prompt is active.
     """
     def __init__(self, prompt: str = "you> ") -> None:
         """Initialize the console with `prompt`."""
         self.prompt = prompt
-        self._line = ""
-        self._buffer: list[str] = [""]
+        self._line = "" # current input line
+        self._lines_used = 1 # how many wrapped lines displayed for self._line
+        self._buffer: list[str] = [""] # current input block
         self._in_block = False
         self._history: deque[str] = deque(maxlen=HISTORY_SIZE)
         self._history_index = 0
-        self._active = False
+        self._active = False # whether or not we are awaiting input
         self._fallback = termios is None or tty is None or not stdin.isatty()
         self.width = 80
+        self.height = 24
         self._col = 0
-        self._line_num = 0
-        self._resized = False
-        self._lines_used = 1
         self._cancel_requested = False
+        self._fixed_lines: list[str] = []
+        self._stream_line = ""
+        self.fd = stdin.fileno()
+        self._has_streamed = False
 
     async def ainput(self) -> str | None:
         """Read a line asynchronously. Returns `None` on EOF."""
@@ -61,40 +90,33 @@ class Console:
         self._line = ""
         self._history_index = len(self._history)
         self._active = True
-        fd = stdin.fileno()
-        saved = termios.tcgetattr(fd)
-        tty.setcbreak(fd, termios.TCSADRAIN)
+        self._fixed_lines = []
+        self._stream_line = ""
+        saved = termios.tcgetattr(self.fd)
+        tty.setcbreak(self.fd, termios.TCSADRAIN)
 
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGWINCH, self._on_resize)
         loop.add_signal_handler(signal.SIGINT, self._on_sigint)
 
         try:
-            self.width = os.get_terminal_size(fd).columns
+            ts = os.get_terminal_size(self.fd)
+            self.width = ts.columns
+            self.height = ts.lines
             prompt_total = len(self.prompt)
-            self._line_num = prompt_total // self.width
+            self._lines_used = prompt_total // self.width + 1
             self._col = prompt_total % self.width
-            self._resized = False
-            self._lines_used = self._line_num + 1
             stdout.write(self.prompt)
             stdout.flush()
 
             while True:
-                if self._resized:
-                    self._resized = False
-                    self.width = os.get_terminal_size(fd).columns
-                    self._redraw()
-                    continue
-
                 if self._cancel_requested:
                     self._cancel_requested = False
                     self._line = ""
                     stdout.write("^C\n")
                     stdout.write(self.prompt)
                     stdout.flush()
-                    self._line_num += 1
                     self._col = len(self.prompt) % self.width
-                    self._lines_used = self._line_num + 1
                     continue
 
                 char = await self._read_char()
@@ -105,9 +127,7 @@ class Console:
                     stdout.write("^C\n")
                     stdout.write(self.prompt)
                     stdout.flush()
-                    self._line_num += 1
                     self._col = len(self.prompt) % self.width
-                    self._lines_used = self._line_num + 1
                     continue
 
                 if char is None:
@@ -115,7 +135,7 @@ class Console:
                     stdout.flush()
                     return None
 
-                if char in ("\r", "\n"):
+                if char in (CR, LF):
                     stdout.write("\n")
                     stdout.flush()
 
@@ -124,27 +144,26 @@ class Console:
 
                     return self._line
 
-                if char in ("\x7f", "\x08"):
+                if char in (CTRL_DEL, CTRL_BACKSPACE):
                     self._erase_char()
                     continue
 
-                if char == "\x04":
+                if char == CTRL_D_EOF:
                     stdout.write("\n")
                     stdout.flush()
                     return None
 
-                if char == "\x1b":
+                if char == ESC:
                     await self._handle_escape()
                     continue
 
-                if char == "\x05":
+                if char == CTRL_E_BLOCK:
                     self._line = ""
                     self._redraw()
                     return BlockRequest()
 
                 if char.isprintable():
                     if self._col + 1 >= self.width:
-                        self._line_num += 1
                         self._lines_used += 1
                         self._col = 0
                     else:
@@ -156,7 +175,7 @@ class Console:
             self._active = False
             loop.remove_signal_handler(signal.SIGWINCH)
             loop.remove_signal_handler(signal.SIGINT)
-            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, saved)
 
     async def ainput_block(self) -> str | None:
         """Read a multi-line block asynchronously. Returns `None` on EOF
@@ -178,27 +197,24 @@ class Console:
         self._history_index = len(self._history)
         self._active = True
         self._in_block = True
-        fd = stdin.fileno()
-        saved = termios.tcgetattr(fd)
-        tty.setcbreak(fd, termios.TCSADRAIN)
+        self._fixed_lines = []
+        self._stream_line = ""
+        saved = termios.tcgetattr(self.fd)
+        tty.setcbreak(self.fd, termios.TCSADRAIN)
 
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGWINCH, self._on_resize)
         loop.add_signal_handler(signal.SIGINT, self._on_sigint)
 
         try:
-            self.width = os.get_terminal_size(fd).columns
+            ts = os.get_terminal_size(self.fd)
+            self.width = ts.columns
+            self.height = ts.lines
             self._update_cursor()
             stdout.write(self.prompt)
             stdout.flush()
 
             while True:
-                if self._resized:
-                    self._resized = False
-                    self.width = os.get_terminal_size(fd).columns
-                    self._redraw()
-                    continue
-
                 if self._cancel_requested:
                     self._cancel_requested = False
                     self._buffer = [""]
@@ -224,7 +240,7 @@ class Console:
                         self._history.append(self._line)
                     return self._line
 
-                if char in ("\r", "\n"):
+                if char in (CR, LF):
                     self._buffer.append("")
                     self._line = "\n".join(self._buffer)
                     stdout.write("\n")
@@ -232,11 +248,11 @@ class Console:
                     self._update_cursor()
                     continue
 
-                if char in ("\x7f", "\x08"):
+                if char in (CTRL_DEL, CTRL_BACKSPACE):
                     self._erase_char()
                     continue
 
-                if char == "\x04":
+                if char == CTRL_D_EOF:
                     if not self._line:
                         stdout.write("\n")
                         stdout.flush()
@@ -246,7 +262,7 @@ class Console:
                     stdout.flush()
                     return self._line
 
-                if char == "\x1b":
+                if char == ESC:
                     await self._handle_escape()
                     continue
 
@@ -261,60 +277,121 @@ class Console:
             self._in_block = False
             loop.remove_signal_handler(signal.SIGWINCH)
             loop.remove_signal_handler(signal.SIGINT)
-            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, saved)
 
     def write_line(self, text: str = "") -> None:
         """Print `text` on its own line, preserving any partially typed
             input line when the prompt is active.
         """
-        if self._active:
-            old_lines_used = self._lines_used
-            old_line_num = self._line_num
+        if not self._active:
+            stdout.write(text)
+            stdout.write("\n")
+            stdout.flush()
+            return
 
-            if old_line_num > 0:
-                stdout.write(f"\033[{old_line_num}A")
-            stdout.write("\r")
+        # erase to the beginning of the prompt line
+        if self._lines_used > 1:
+            stdout.write(ansi_move_up(self._lines_used))
+        stdout.write(MOVE_TO_LINE_START + CLEAR_ENTIRE_LINE + CR)
 
-            for i in range(old_lines_used):
-                stdout.write("\033[K")
-                if i < old_lines_used - 1:
-                    stdout.write("\033[1B")
+        # then just fucking print the goddamn text
+        stdout.write(text.strip() + "\n")
 
-            if old_lines_used > 1:
-                stdout.write(f"\033[{old_lines_used - 1}A")
-            stdout.write("\r")
-
-            stdout.write(text + "\n")
-
-            if self._in_block:
-                self._update_cursor()
-            else:
-                total = len(self.prompt) + len(self._line)
-                self._line_num = total // self.width
-                self._col = total % self.width
-                self._lines_used = self._line_num + 1
-            stdout.write(self.prompt + self._line)
+        # then fucking print the fucking prompt
+        stdout.write(self.prompt)
+        if self._in_block:
+            stdout.write("\n".join(self._buffer))
         else:
-            stdout.write(text + "\n")
-
+            stdout.write(self._line)
         stdout.flush()
+        self._update_cursor()
+
+    def write_stream(self, text: str, done: bool = False) -> None:
+        """Write part of a stream of text. Expecting a token stream from
+            an LLM, not chunks of multiple tokens.
+        """
+        if not self._active:
+            stdout.write(text)
+            if done:
+                stdout.write("\n")
+            stdout.flush()
+            return
+
+        # erase to the beginning of the most recent streamed line
+        if self._lines_used > 1:
+            stdout.write(ansi_move_up(self._lines_used))
+        lines_to_clear = self._line_visual(self._stream_line)
+        lines_to_clear += self._line_visual(self.prompt + self._line)
+        if self._in_block:
+            lines_to_clear += self._lines_used - 1
+        if lines_to_clear > 1:
+            for _ in range(lines_to_clear - 1):
+                stdout.write(CLEAR_ENTIRE_LINE)
+                stdout.write(ansi_move_up(1))
+        stdout.write(MOVE_TO_LINE_START + CLEAR_ENTIRE_LINE)
+
+        # just a single fucking newline
+        if not text.strip() and "\n" in text:
+            stdout.write(self._stream_line + "\n")
+            self._stream_line = ""
+
+        # if text contains a new line
+        elif "\n" in text:
+            parts = text.split("\n")
+            stdout.write(self._stream_line + parts[0] + "\n")
+            if len(parts) > 2:
+                for p in parts[1:-1]:
+                    stdout.write(p + "\n")
+            self._stream_line = parts[-1] if len(parts) > 0 else ""
+
+        # normal fucking text
+        else:
+            self._stream_line += text
+            stdout.write(self._stream_line)
+
+        self._has_streamed = True
+
+        # print an extra newline when fucking done
+        if done:
+            stdout.write("\n")
+            self._has_streamed = False
+
+        # then fucking print the fucking prompt
+        stdout.write("\n" + self.prompt)
+        if self._in_block:
+            stdout.write("\n".join(self._buffer))
+        else:
+            stdout.write(self._line)
+        stdout.flush()
+        self._update_cursor()
+
+    def _line_visual(self, line: str) -> int:
+        """Count visual lines a single logical line occupies at the
+            current terminal width, accounting for wrapping.
+        """
+        L = len(line)
+        if L == 0:
+            return 1
+        if L % self.width == 0:
+            return L // self.width
+        return (L - 1) // self.width + 1
 
     def close(self) -> None:
         """Clear input state. Terminal attributes are restored by
             `ainput` when it exits.
         """
         self._active = False
+        self._fixed_lines = []
+        self._stream_line = ""
 
     async def _read_char(self) -> str | None:
         """Read one character without blocking. Returns `None` on EOF."""
-        fd = stdin.fileno()
-
         while True:
             if self._cancel_requested:
-                return "\x03"
+                return CTRL_C_CANCEL
             ready, _, _ = select.select([stdin], [], [], 0)
             if ready:
-                data = os.read(fd, 1)
+                data = os.read(self.fd, 1)
                 if not data:
                     return None
                 return data.decode(errors="replace")
@@ -322,14 +399,13 @@ class Console:
 
     async def _read_escape_sequence(self) -> str:
         """Read up to two bytes following an escape character."""
-        fd = stdin.fileno()
         data = b""
 
         for _ in range(2):
             ready, _, _ = select.select([stdin], [], [], ESC_TIMEOUT)
             if not ready:
                 break
-            byte = os.read(fd, 1)
+            byte = os.read(self.fd, 1)
             if not byte:
                 break
             data += byte
@@ -340,9 +416,9 @@ class Console:
         """Handle arrow keys, ignoring all other escape sequences."""
         sequence = await self._read_escape_sequence()
 
-        if sequence in ("[A", "OA"):
+        if sequence in ARROW_UP_SEQS:
             self._recall(-1)
-        elif sequence in ("[B", "OB"):
+        elif sequence in ARROW_DOWN_SEQS:
             self._recall(1)
 
     def _recall(self, direction: int) -> None:
@@ -376,7 +452,10 @@ class Console:
 
     def _on_resize(self) -> None:
         """Flag that the terminal was resized so the input loop redraws."""
-        self._resized = True
+        ts = os.get_terminal_size(self.fd)
+        self.width = ts.columns
+        self.height = ts.lines
+        self._redraw()
 
     def _erase_char(self) -> None:
         """Remove the last character from the line and the display."""
@@ -401,14 +480,13 @@ class Console:
             if new_line < old_line:
                 self._redraw()
             else:
-                self._line_num = new_line
                 self._col = new_total % self.width
-                stdout.write("\b \b")
+                stdout.write(ERASE_LAST_CHAR)
         stdout.flush()
 
     def _redraw(self) -> None:
         """Redraw the prompt and current line."""
-        old_line_num = self._line_num
+        old_line_num = self._lines_used - 1
         old_lines_used = self._lines_used
 
         if self._in_block:
@@ -423,19 +501,18 @@ class Console:
         to_clear = max(old_lines_used, new_lines_used)
 
         if old_line_num > 0:
-            stdout.write(f"\033[{old_line_num}A")
-        stdout.write("\r")
+            stdout.write(ansi_move_up(old_line_num))
+        stdout.write(CR)
 
         for i in range(to_clear):
-            stdout.write("\033[K")
+            stdout.write(CLEAR_LINE)
             if i < to_clear - 1:
-                stdout.write("\033[1B")
+                stdout.write(MOVE_DOWN_1)
 
         if to_clear > 1:
-            stdout.write(f"\033[{to_clear - 1}A")
-        stdout.write("\r")
+            stdout.write(ansi_move_up(to_clear - 1))
+        stdout.write(CR)
 
-        self._line_num = line_num
         self._col = col
         self._lines_used = new_lines_used
 
@@ -467,6 +544,5 @@ class Console:
     def _update_cursor(self) -> None:
         """Update cursor position from the current buffer state."""
         line_num, col = self._cursor_position()
-        self._line_num = line_num
         self._col = col
         self._lines_used = line_num + 1

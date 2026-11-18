@@ -10,12 +10,18 @@ local Ollama service. This is a library, not an application.
 source venv/bin/activate  # REQUIRED before ALL Python commands
 ```
 
-# Testing & Building Convention
+# Forbidden Commands
 
 - NEVER, under ANY CIRCUMSTANCES, run `pip install` on ANYTHING. NEVER.
 - NEVER, under ANY CIRCUMSTANCES, run `git checkout` on a file. NEVER.
 - NEVER, under ANY CIRCUMSTANCES, run `git stash`. NEVER.
 - NEVER, under ANY CIRCUMSTANCES, run `git reset` or `git reset --hard`. NEVER.
+
+# Testing & Building Convention
+
+- Do NOT embed magic strings/values throughout logic. ALWAYS use constants.
+- Do NOT assume that every method must be private (prefixed with `_`). ALWAYS use
+  ordinary method names unless you have a specific reason not to.
 - When writing ephemeral test code, use a minimum number of print statements to
   conserve output tokens.
 - NEVER create sessions with `portable=False` in tests. ALWAYS use `portable=True`.
