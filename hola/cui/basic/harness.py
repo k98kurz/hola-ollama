@@ -174,13 +174,11 @@ class ChatHarness:
             prefix side effects.
         """
         for transition in self.response_fsm.rules:
-            if  (   transition.from_state is ResponseState.INIT
-                    and transition.on_event == ResponseEvent.WRITE_THOUGHT
-                ):
+            if transition.on_event == ResponseEvent.WRITE_THOUGHT:
                 self.response_fsm.add_transition_hook(
                     transition, self._open_thought_hook
                 )
-            if transition.from_state is ResponseState.WRITING_THOUGHT:
+            if transition.from_state is ResponseState.THINKING:
                 self.response_fsm.add_transition_hook(
                     transition, self._close_thought_hook
                 )
@@ -284,26 +282,25 @@ class ChatHarness:
 
                 self.history.append(assistant)
 
-                if assistant.tool_calls:
-                    for tc in assistant.tool_calls:
-                        i += 1
-                        try:
-                            result = await execute_tool_call(tc)
-                        except Exception as error:
-                            result = f"Tool execution error: {error}"
-                        if self.verbose:
-                            await self.console.write_line(
-                                f"<tool name={tc.function.name} callid={tc.call_id}>"
-                                f"{result}</tool>"
-                            )
-                        self.history.append(Message(
-                            role=Role.TOOL,
-                            content=str(result),
-                            call_id=tc.call_id,
-                        ))
-                    continue
+                if not assistant.tool_calls:
+                    break
 
-                break
+                for tc in assistant.tool_calls:
+                    i += 1
+                    try:
+                        result = await execute_tool_call(tc)
+                    except Exception as error:
+                        result = f"Tool execution error: {error}"
+                    if self.verbose:
+                        await self.console.write_line(
+                            f"<tool name={tc.function.name} callid={tc.call_id}>"
+                            f"{result}</tool>"
+                        )
+                    self.history.append(Message(
+                        role=Role.TOOL,
+                        content=str(result),
+                        call_id=tc.call_id,
+                    ))
 
             if i >= self.max_tool_calls:
                 await self.console.write_line("[loop]: max_tool_calls reached or exceeded")
@@ -333,7 +330,7 @@ class ChatHarness:
 
                 if stream_thinking and thinking:
                     await fsm.input(ResponseEvent.WRITE_THOUGHT)
-                    if fsm.current is ResponseState.WRITING_THOUGHT:
+                    if fsm.current is ResponseState.THINKING:
                         await self.console.write_stream(thinking)
                         thinking_parts.append(thinking)
 

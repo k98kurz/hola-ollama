@@ -4,7 +4,7 @@ from flying_state_machines import AsyncFSM as FSM, AsyncTransition as Transition
 
 class ResponseState(Enum):
     INIT = auto()
-    WRITING_THOUGHT = auto()
+    THINKING = auto()
     CALLING_TOOLS = auto()
     WRITING_CONTENT = auto()
     DONE = auto()
@@ -23,22 +23,42 @@ class ResponseFSM(FSM):
         Transition(
             ResponseState.INIT,
             ResponseEvent.WRITE_THOUGHT,
-            ResponseState.WRITING_THOUGHT
-        ),
-        Transition(
-            ResponseState.WRITING_THOUGHT,
-            ResponseEvent.WRITE_CONTENT,
-            ResponseState.WRITING_CONTENT
-        ),
-        Transition(
-            ResponseState.WRITING_THOUGHT,
-            ResponseEvent.CALL_TOOL,
-            ResponseState.CALLING_TOOLS
+            ResponseState.THINKING
         ),
         Transition(
             ResponseState.INIT,
             ResponseEvent.WRITE_CONTENT,
             ResponseState.WRITING_CONTENT
+        ),
+        Transition(
+            ResponseState.INIT,
+            ResponseEvent.CALL_TOOL,
+            ResponseState.CALLING_TOOLS
+        ),
+        Transition(
+            ResponseState.THINKING,
+            ResponseEvent.WRITE_CONTENT,
+            ResponseState.WRITING_CONTENT
+        ),
+        Transition(
+            ResponseState.THINKING,
+            ResponseEvent.CALL_TOOL,
+            ResponseState.CALLING_TOOLS
+        ),
+        Transition(
+            ResponseState.THINKING,
+            ResponseEvent.END_RESPONSE,
+            ResponseState.DONE
+        ),
+        Transition(
+            ResponseState.WRITING_CONTENT,
+            ResponseEvent.WRITE_THOUGHT,
+            ResponseState.THINKING
+        ),
+        Transition(
+            ResponseState.WRITING_CONTENT,
+            ResponseEvent.CALL_TOOL,
+            ResponseState.CALLING_TOOLS
         ),
         Transition(
             ResponseState.WRITING_CONTENT,
@@ -46,9 +66,14 @@ class ResponseFSM(FSM):
             ResponseState.DONE
         ),
         Transition(
-            ResponseState.INIT,
-            ResponseEvent.CALL_TOOL,
-            ResponseState.CALLING_TOOLS
+            ResponseState.CALLING_TOOLS,
+            ResponseEvent.WRITE_THOUGHT,
+            ResponseState.THINKING
+        ),
+        Transition(
+            ResponseState.CALLING_TOOLS,
+            ResponseEvent.WRITE_CONTENT,
+            ResponseState.WRITING_CONTENT
         ),
         Transition(
             ResponseState.CALLING_TOOLS,
