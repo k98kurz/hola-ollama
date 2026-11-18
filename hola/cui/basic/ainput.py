@@ -74,7 +74,7 @@ class Console:
         self._fixed_lines: list[str] = []
         self._stream_line = ""
         self.fd = stdin.fileno()
-        self._has_streamed = False
+        self._stream_lock = asyncio.Lock()
 
     async def ainput(self) -> str | None:
         """Read a line asynchronously. Returns `None` on EOF."""
@@ -279,7 +279,7 @@ class Console:
             loop.remove_signal_handler(signal.SIGINT)
             termios.tcsetattr(self.fd, termios.TCSADRAIN, saved)
 
-    def write_line(self, text: str = "") -> None:
+    async def write_line(self, text: str = "") -> None:
         """Print `text` on its own line, preserving any partially typed
             input line when the prompt is active.
         """
@@ -288,6 +288,10 @@ class Console:
             stdout.write("\n")
             stdout.flush()
             return
+
+        # clear line in case streaming is occurring
+        async with self._stream_lock:
+            self._stream_line = ""
 
         # erase to the beginning of the prompt line
         if self._lines_used > 1:
@@ -306,7 +310,7 @@ class Console:
         stdout.flush()
         self._update_cursor()
 
-    def write_stream(self, text: str, done: bool = False) -> None:
+    async def write_stream(self, text: str, done: bool = False) -> None:
         """Write part of a stream of text. Expecting a token stream from
             an LLM, not chunks of multiple tokens.
         """
@@ -318,43 +322,41 @@ class Console:
             return
 
         # erase to the beginning of the most recent streamed line
-        if self._lines_used > 1:
-            stdout.write(ansi_move_up(self._lines_used))
-        lines_to_clear = self._line_visual(self._stream_line)
-        lines_to_clear += self._line_visual(self.prompt + self._line)
-        if self._in_block:
-            lines_to_clear += self._lines_used - 1
-        if lines_to_clear > 1:
-            for _ in range(lines_to_clear - 1):
-                stdout.write(CLEAR_ENTIRE_LINE)
-                stdout.write(ansi_move_up(1))
-        stdout.write(MOVE_TO_LINE_START + CLEAR_ENTIRE_LINE)
+        async with self._stream_lock:
+            if self._lines_used > 1:
+                stdout.write(ansi_move_up(self._lines_used))
+            lines_to_clear = self._line_visual(self._stream_line)
+            lines_to_clear += self._line_visual(self.prompt + self._line)
+            if self._in_block:
+                lines_to_clear += self._lines_used - 1
+            if lines_to_clear > 1:
+                for _ in range(lines_to_clear - 1):
+                    stdout.write(CLEAR_ENTIRE_LINE)
+                    stdout.write(ansi_move_up(1))
+            stdout.write(MOVE_TO_LINE_START + CLEAR_ENTIRE_LINE)
 
-        # just a single fucking newline
-        if not text.strip() and "\n" in text:
-            stdout.write(self._stream_line + "\n")
-            self._stream_line = ""
+            # just a single fucking newline
+            if not text.strip() and "\n" in text:
+                stdout.write(self._stream_line + "\n")
+                self._stream_line = ""
 
-        # if text contains a new line
-        elif "\n" in text:
-            parts = text.split("\n")
-            stdout.write(self._stream_line + parts[0] + "\n")
-            if len(parts) > 2:
-                for p in parts[1:-1]:
-                    stdout.write(p + "\n")
-            self._stream_line = parts[-1] if len(parts) > 0 else ""
+            # if text contains a new line
+            elif "\n" in text:
+                parts = text.split("\n")
+                stdout.write(self._stream_line + parts[0] + "\n")
+                if len(parts) > 2:
+                    for p in parts[1:-1]:
+                        stdout.write(p + "\n")
+                self._stream_line = parts[-1] if len(parts) > 0 else ""
 
-        # normal fucking text
-        else:
-            self._stream_line += text
-            stdout.write(self._stream_line)
-
-        self._has_streamed = True
+            # normal fucking text
+            else:
+                self._stream_line += text
+                stdout.write(self._stream_line)
 
         # print an extra newline when fucking done
         if done:
             stdout.write("\n")
-            self._has_streamed = False
 
         # then fucking print the fucking prompt
         stdout.write("\n" + self.prompt)

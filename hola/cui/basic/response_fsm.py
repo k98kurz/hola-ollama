@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from flying_state_machines import FSM, Transition
+from flying_state_machines import AsyncFSM as FSM, AsyncTransition as Transition
 
 
 class ResponseState(Enum):
