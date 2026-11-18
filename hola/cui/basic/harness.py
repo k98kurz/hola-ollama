@@ -1,18 +1,24 @@
-from collections.abc import AsyncGenerator
-from typing import Callable
 from .ainput import BlockRequest, Console
 from .response_fsm import ResponseFSM, ResponseEvent, ResponseState
+from collections.abc import AsyncGenerator
+from typing import Callable
 from hola.client import BaseClient
-from hola.types import ChatRequest, ChatResponse, ChatResponseChunk, Message, Role
+from hola.errors import type_assert, value_assert
+from hola.prompts.adapters import tool_enabled_chat_adapter
+from hola.tools.core import execute_tool_call
+from hola.tools.types import ToolCall, ToolDefinition
+from hola.types import ChatResponse, ChatResponseChunk, Message, Role
 import asyncio
 import contextlib
+import json
 
 
 class ChatHarness:
     """Sequential chat loop fed by an asynchronous input queue."""
     def __init__(
             self, client: BaseClient, model: str, console: Console,
-            system: str | None = None, show_thinking: bool = False
+            system: str = "", show_thinking: bool = False,
+            tools: list[ToolDefinition] = [], max_tool_calls: int = 999
         ) -> None:
         """Initialize the harness. An optional `system` message is
             placed at the start of the conversation.
@@ -26,24 +32,65 @@ class ChatHarness:
         self.system = system
         self.reset_history()
         self.show_thinking = show_thinking
+        type_assert(isinstance(tools, list), "tools must be list[ToolDefinition]")
+        type_assert(
+            all(isinstance(t, ToolDefinition) for t in tools),
+            "tools must be list[ToolDefinition]"
+        )
+        self.tools = tools
+        type_assert(isinstance(max_tool_calls, int), "max_tool_calls must be int")
+        value_assert(max_tool_calls > 0, "max_tool_calls must be positive")
+        self.max_tool_calls = max_tool_calls
+        self.verbose = False
         self.response_fsm = ResponseFSM()
         self._register_response_hooks()
         self.stream_response = True
         self.slash_commands = {}
         self._register_slash_commands()
 
+    def slash(self, command: str, description: str = ''):
+        """Decorator for registering a slash command. Calls
+            `register_slash_command` under the hood.
+        """
+        def wrap(fn: Callable):
+            self.register_slash_command(command, fn, description)
+            return fn
+        return wrap
+
+    def register_slash_command(
+            self, command: str, fn: Callable[[str], bool|None],
+            description: str = ''
+        ) -> None:
+        """Register an additional slash command. `command` is the name
+            without the leading slash; `fn` receives the full command
+            line text.
+        """
+        self.slash_commands[f"/{command}"] = (fn, description)
+
     def _register_slash_commands(self):
-        def slash(command: str):
-            def wrap(fn: Callable):
-                self.slash_commands[f"/{command}"] = fn
-                return fn
-            return wrap
-        
-        @slash("quit")
+        @self.slash("quit", "quit the harness")
         def quit(_: str):
             return True
 
-        @slash("stream")
+        @self.slash(
+            "settings", "show settings with `/settings [key]` or `/settings`"
+        )
+        def settings(text: str):
+            settings = {
+                "stream": self.stream_response,
+                "thinking": self.show_thinking,
+                "verbose": self.verbose,
+            }
+            parts = text.split()
+            if len(parts) == 2:
+                flag = parts[1]
+                if flag in settings:
+                    self.console.write_line(f"{flag}: {settings[flag]}")
+                return
+            for k,v in settings.items():
+                self.console.write_line(f"{k}: {v}")
+
+        @self.slash("stream", "toggle response streaming")
         def toggle_streaming(_: str):
             if self.stream_response:
                 self.stream_response = False
@@ -52,7 +99,7 @@ class ChatHarness:
                 self.stream_response = True
                 self.console.write_line("Response streaming enabled")
 
-        @slash("thinking")
+        @self.slash("thinking", "toggle show thinking")
         def toggle_thinking(_: str):
             if self.show_thinking:
                 self.show_thinking = False
@@ -61,12 +108,13 @@ class ChatHarness:
                 self.show_thinking = True
                 self.console.write_line("Thinking shown")
 
-        @slash("clear")
+        @self.slash("clear", "start new session")
+        @self.slash("new", "start new session")
         def clear(_: str):
             self.reset_history()
             self.console.write_line("Session history cleared")
 
-        @slash("block")
+        @self.slash("block", "enter block input mode")
         async def toggle_block_input(_: str):
             self.console.write_line("<Block input mode active>")
             block_text = await self.console.ainput_block()
@@ -75,14 +123,39 @@ class ChatHarness:
             if block_text.strip():
                 self.submit(block_text)
 
-    async def handle_slash_command(self, text: str):
+        @self.slash("verbose", "toggle verbose output (tool call results)")
+        def toggle_verbose(_: str):
+            self.verbose = not self.verbose
+            self.console.write_line(
+                "Verbose enabled" if self.verbose else "Verbose disabled"
+            )
+
+        @self.slash("help", "show slash command help")
+        @self.slash("?", "show slash command help")
+        def help(text: str):
+            commands = {
+                k: v[1] or v[0].__doc__ or v[0].__name__
+                for k, v in self.slash_commands.items()
+            }
+            parts = text.strip().split()
+            if len(parts) == 2:
+                cmd = parts[1]
+                cmd = f"/{cmd}" if cmd[0] != "/" else cmd
+                if cmd in commands:
+                    self.console.write_line(f"{cmd}: {commands[cmd]}")
+                return
+            for k,v in commands.items():
+                self.console.write_line(f"{k}: {v}")
+
+    async def handle_slash_command(self, text: str) -> bool|None:
         command = text.split(" ")[0]
         if command not in self.slash_commands:
-            self.console.write_line(f"unrecognized slash command: {command}")
+            self.console.write_line(f"unrecognized slash command: {command}\n")
             return
-        res = self.slash_commands[command](text)
+        res = self.slash_commands[command][0](text)
         if asyncio.iscoroutine(res):
             res = await res
+        self.console.write_line("")
         return res
 
     def reset_history(self):
@@ -95,17 +168,17 @@ class ChatHarness:
             prefix side effects.
         """
         for transition in self.response_fsm.rules:
-            if (transition.from_state == ResponseState.INIT
-                    and transition.on_event == ResponseEvent.WRITE_THOUGHT):
+            if  (   transition.from_state is ResponseState.INIT
+                    and transition.on_event == ResponseEvent.WRITE_THOUGHT
+                ):
                 self.response_fsm.add_transition_hook(
                     transition, self._open_thought_hook
                 )
-            if transition.on_event == ResponseEvent.WRITE_CONTENT:
-                if (transition.from_state
-                        == ResponseState.WRITING_THOUGHT):
-                    self.response_fsm.add_transition_hook(
-                        transition, self._close_thought_hook
-                    )
+            if transition.from_state is ResponseState.WRITING_THOUGHT:
+                self.response_fsm.add_transition_hook(
+                    transition, self._close_thought_hook
+                )
+            if transition.on_event is ResponseEvent.WRITE_CONTENT:
                 self.response_fsm.add_transition_hook(
                     transition, self._write_prefix_hook
                 )
@@ -180,26 +253,55 @@ class ChatHarness:
             self.history.append(message)
             stream_response = self.stream_response
 
-            try:
-                request = ChatRequest(
-                    model=self.model,
+            i = 0
+            while i < self.max_tool_calls:
+                i += 1
+                request = tool_enabled_chat_adapter(
+                    phase_instructions=self.system or "",
                     messages=list(self.history),
-                    stream=stream_response,
+                    tools=self.tools,
+                    model_name=self.model,
                 )
-                response = await self.client.chat(request)
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:
-                self.history.pop()
-                self.console.write_line(f"[error] {error}")
-                continue
+                request.stream = stream_response
 
-            if stream_response:
-                assistant = await self._stream_response(response)
-            else:
-                assistant = await self._print_response(response)
+                try:
+                    response = await self.client.chat(request)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    self.history.pop()
+                    self.console.write_line(f"[error] {error}")
+                    break
 
-            self.history.append(assistant)
+                if stream_response:
+                    assistant = await self._stream_response(response)
+                else:
+                    assistant = await self._print_response(response)
+
+                self.history.append(assistant)
+
+                if assistant.tool_calls:
+                    for tc in assistant.tool_calls:
+                        try:
+                            result = await execute_tool_call(tc)
+                        except Exception as error:
+                            result = f"Tool execution error: {error}"
+                        if self.verbose:
+                            self.console.write_line(
+                                f"<tool name={tc.function.name} callid={tc.call_id}>"
+                                f"{result}</tool>"
+                            )
+                        self.history.append(Message(
+                            role=Role.TOOL,
+                            content=str(result),
+                            call_id=tc.call_id,
+                        ))
+                    continue
+
+                break
+
+            if i == self.max_tool_calls:
+                self.console.write_line("[error]: max_tool_calls exceeded")
 
     async def _stream_response(
             self, stream: AsyncGenerator[ChatResponseChunk, None],
@@ -213,6 +315,7 @@ class ChatHarness:
         stream_thinking = self.show_thinking
         thinking_parts: list[str] = []
         content_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
         fsm = self.response_fsm
         fsm.context["console"] = self.console
         fsm.context["stream_thinking"] = stream_thinking
@@ -224,31 +327,38 @@ class ChatHarness:
                 content = chunk.message.content or ""
 
                 if stream_thinking and thinking:
-                    if fsm.current == ResponseState.INIT:
-                        fsm.input(ResponseEvent.WRITE_THOUGHT)
-                    if fsm.current == ResponseState.WRITING_THOUGHT:
+                    fsm.input(ResponseEvent.WRITE_THOUGHT)
+                    if fsm.current is ResponseState.WRITING_THOUGHT:
                         self.console.write_stream(thinking)
                         thinking_parts.append(thinking)
 
+                if chunk.message.tool_calls:
+                    fsm.input(ResponseEvent.CALL_TOOL)
+                    tool_calls = chunk.message.tool_calls
+
+                    tc_lines = []
+                    for tc in tool_calls:
+                        tc_lines.append(
+                            f"<call id={tc.call_id} "
+                            f"name={tc.function.name} "
+                            f"args={json.dumps(tc.function.arguments)} />"
+                        )
+                    if fsm.current is ResponseState.CALLING_TOOLS:
+                        self.console.write_stream("\n".join(tc_lines) + "\n")
+
                 if content:
-                    if fsm.current in (
-                            ResponseState.INIT,
-                            ResponseState.WRITING_THOUGHT
-                        ):
-                        fsm.input(ResponseEvent.WRITE_CONTENT)
-                    if fsm.current == ResponseState.WRITING_CONTENT:
+                    fsm.input(ResponseEvent.WRITE_CONTENT)
+                    if fsm.current is ResponseState.WRITING_CONTENT:
                         self.console.write_stream(content)
                         content_parts.append(content)
 
                 if chunk.done:
                     break
+        except Exception as e:
+            self.console.write_line(f"An error was encountered: {e}")
+            raise
         finally:
-            if fsm.current == ResponseState.WRITING_THOUGHT:
-                fsm.input(ResponseEvent.WRITE_CONTENT)
-            if fsm.current == ResponseState.INIT:
-                fsm.input(ResponseEvent.WRITE_CONTENT)
-            if fsm.current == ResponseState.WRITING_CONTENT:
-                fsm.input(ResponseEvent.END_RESPONSE)
+            fsm.input(ResponseEvent.END_RESPONSE)
             self.console.write_stream("", done=True)
 
         thinking = "".join(thinking_parts) or None
@@ -256,6 +366,7 @@ class ChatHarness:
             role=Role.ASSISTANT,
             content="".join(content_parts),
             thinking=thinking,
+            tool_calls=tool_calls,
         )
 
     async def _print_response(self, response: ChatResponse) -> Message:
@@ -264,6 +375,7 @@ class ChatHarness:
         """
         thinking = response.message.thinking or ""
         content = response.message.content or ""
+        tool_calls = response.message.tool_calls
 
         lines = [""]
         if thinking and self.show_thinking:
@@ -273,10 +385,18 @@ class ChatHarness:
         if content:
             lines.append(f"assistant> {content}")
 
+        for tc in tool_calls:
+            lines.append(
+                f"<call id={tc.call_id} "
+                f"name={tc.function.name} "
+                f"args={json.dumps(tc.function.arguments)} />"
+            )
+
         self.console.write_line("\n".join(lines))
 
         return Message(
             role=Role.ASSISTANT,
             content=content or None,
             thinking=thinking or None,
+            tool_calls=tool_calls,
         )
