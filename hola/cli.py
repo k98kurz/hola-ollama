@@ -1,7 +1,12 @@
 import argparse
+import asyncio
 import shutil
 from pathlib import Path
 from importlib.resources import files
+
+from hola.cui.basic.chat import DEFAULT_HOST, DEFAULT_MODEL, run_chat
+from hola.tools import get_tool, list_tools
+from hola.tools.types import ToolDefinition
 
 
 def get_skill_command(output_dir: str | None = None) -> None:
@@ -58,6 +63,30 @@ def codex_skill_command() -> None:
     print(f"Skill copied to {output_path}/SKILL.md")
 
 
+def resolve_tools_arg(tools_arg: str | None) -> list[ToolDefinition] | None:
+    """Resolve a tools argument string to ToolDefinitions.
+
+    A value of '*' returns all registered tools. Otherwise split on
+    commas, validating each name against the registry. If a name is
+    invalid, an error prints valid tool names and returns `None`.
+    """
+    if not tools_arg:
+        return None
+    if tools_arg == '*':
+        return list_tools()
+    tool_names = [name.strip() for name in tools_arg.split(',') if name.strip()]
+    tools: list[ToolDefinition] = []
+    for name in tool_names:
+        td = get_tool(name)
+        if td is None:
+            valid_tools = [t.name for t in list_tools()]
+            valid_list = ', '.join(valid_tools)
+            print(f"Error: unknown tool '{name}'. Valid tools: {valid_list}")
+            return None
+        tools.append(td)
+    return tools or None
+
+
 def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -78,6 +107,45 @@ def main() -> None:
         '--output', '-o',
         help='Output directory (default: print to stdout)',
         default=None
+    )
+
+    # Create chat subcommand parser
+    chat_parser = argparse.ArgumentParser(add_help=False)
+    chat_parser.add_argument(
+        '--host',
+        help=(
+            "Base URL of the OpenAI-compatible inference server "
+            f"(default: {DEFAULT_HOST})"
+        ),
+        default=None,
+    )
+    chat_parser.add_argument(
+        '--model',
+        help=f"Model name to request (default: {DEFAULT_MODEL})",
+        default=None,
+    )
+    chat_parser.add_argument(
+        '--system',
+        help="Optional system prompt",
+        default=None,
+    )
+    chat_parser.add_argument(
+        '--api-key',
+        help="Optional API key for Authorization: Bearer auth",
+        default=None,
+    )
+    chat_parser.add_argument(
+        '--no-thinking',
+        action='store_true',
+        help='Disable thinking-mode display',
+    )
+    chat_parser.add_argument(
+        '--tools',
+        help=(
+            "Tools to enable. '*' for all tools, or a comma-separated "
+            "list of tool names to validate against the registry"
+        ),
+        default=None,
     )
 
     # Add subcommands
@@ -117,6 +185,16 @@ def main() -> None:
         description=f'Output the hola agent skill for Codex'
     )
 
+    subparsers.add_parser(
+        'chat',
+        parents=[chat_parser],
+        help='chat: Run an asynchronous chat CUI against an '
+             'OpenAI-compatible server',
+        description=(
+            'Run an asynchronous chat CUI against an OpenAI-compatible server'
+        ),
+    )
+
     args = parser.parse_args()
 
     if args.command == 'skill':
@@ -129,6 +207,22 @@ def main() -> None:
         claude_skill_command()
     elif args.command == 'codex':
         codex_skill_command()
+    elif args.command == 'chat':
+        host = args.host if args.host is not None else DEFAULT_HOST
+        model = args.model if args.model is not None else DEFAULT_MODEL
+        show_thinking = not args.no_thinking
+        tools = resolve_tools_arg(args.tools)
+        if args.tools is not None and tools is None:
+            return
+        try:
+            asyncio.run(
+                run_chat(
+                    host, model, args.system, args.api_key,
+                    show_thinking, tools,
+                )
+            )
+        except KeyboardInterrupt:
+            pass
     else:
         parser.print_help()
 

@@ -15,6 +15,18 @@ import contextlib
 import json
 
 
+def _param_schema_type(v: dict) -> str:
+    if 'type' in v:
+        return v['type']
+    if 'anyOf' in v:
+        return 'anyOf'
+    if 'items' in v:
+        return 'array'
+    if 'properties' in v:
+        return 'object'
+    return 'any'
+
+
 class ChatHarness:
     """Sequential chat loop fed by an asynchronous input queue."""
     def __init__(
@@ -156,10 +168,21 @@ class ChatHarness:
             text = text[5:].strip()
             if text:
                 parts = text.split()
-                name, args = parts[0], parts[1:]
-                tool = ToolCallFunction(name, {})
-                tc = ToolCall(tool)
+                name = parts[0]
+                args_str = " ".join(parts[1:])
                 try:
+                    arguments = json.loads(args_str) if args_str else {}
+                except json.JSONDecodeError:
+                    arguments = {}
+                    for p in parts[1:]:
+                        if "=" in p:
+                            k, v = p.split("=", 1)
+                            arguments[k] = v
+                        else:
+                            arguments[f"arg{len(arguments)}"] = p
+                try:
+                    tool = ToolCallFunction(name, arguments)
+                    tc = ToolCall(tool)
                     result = await execute_tool_call(
                         tc, self.session, {t.name for t in self.tools}
                     )
@@ -171,7 +194,7 @@ class ChatHarness:
             lines = []
             for t in self.tools:
                 params = {
-                    k: v['type']
+                    k: _param_schema_type(v)
                     for k, v in t.parameters['properties'].items()
                 }
                 lines.append(f"{t.name}: {json.dumps(params, indent=1)}")
@@ -249,11 +272,11 @@ class ChatHarness:
                 self.response_fsm.add_transition_hook(
                     transition, self._write_prefix_hook
                 )
-            if  (   transition.from_state is ResponseState.WRITING_CONTENT
+            if  (   transition.from_state is not ResponseState.CALLING_TOOLS
                     and transition.on_event is ResponseEvent.CALL_TOOL
                 ):
                 self.response_fsm.add_transition_hook(
-                    transition, lambda: self.write_line("")
+                    transition, lambda *_: self.console.write_line("")
                 )
 
     async def _open_thought_hook(
@@ -337,17 +360,18 @@ class ChatHarness:
 
                 try:
                     response = await self.client.chat(request)
+
+                    if stream_response:
+                        assistant = await self._stream_response(response)
+                    else:
+                        assistant = await self._print_response(response)
+
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
                     self.history.pop()
                     await self.console.write_line(f"[error] {error}")
                     break
-
-                if stream_response:
-                    assistant = await self._stream_response(response)
-                else:
-                    assistant = await self._print_response(response)
 
                 self.history.append(assistant)
 
@@ -471,7 +495,7 @@ class ChatHarness:
 
         return Message(
             role=Role.ASSISTANT,
-            content=content or None,
+            content=content,
             thinking=thinking or None,
             tool_calls=tool_calls,
         )
@@ -483,7 +507,7 @@ class ChatHarness:
             elif m.role is Role.USER:
                 await self.console.write_line(f"[user] {m.content}")
             elif m.role is Role.ASSISTANT:
-                if m.thinking:
+                if m.thinking and self.show_thinking:
                     await self.console.write_line(
                         f"<thought>\n{m.thinking}\n</thought>"
                     )
