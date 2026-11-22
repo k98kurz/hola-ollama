@@ -35,6 +35,8 @@ source venv/bin/activate  # REQUIRED before ALL Python commands
 - Do not worry about backwards compatibility; this project is under development,
   incomplete, and has never been used anywhere.
 - Do NOT use pytest. This project uses unittest EXCLUSIVELY.
+- NEVER use `git add`, `git checkout`, `git restore`, etc. The management of the
+  repository is left to humans.
 - Use bare assert statements where possible in tests, not `self.assertX`
   - Exception: use `with self.assertRaises(SomeErrorClass) as e:` when testing errors
 - Do NOT worry about backwards compatibility. This project is an early alpha. Just

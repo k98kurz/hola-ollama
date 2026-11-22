@@ -229,6 +229,34 @@ class TestCalculate(unittest.TestCase):
             session.delete()
         asyncio.run(test())
 
+    def test_statistics_precision_mode(self):
+        """Test statistics functions with vector arguments in precision mode."""
+        STATS_PRECISION_TESTS: list[tuple[str, int, list[str]]] = [
+            (":= x [1 2 3]; sum x", 3, ["6"]),
+            (":= x [1 2 3]; avg x", 3, ["2"]),
+            (":= x [1 2 3]; var x", 3, ["1"]),
+            (":= x [1 2 3]; stdev x", 3, ["1"]),
+            (":= x [1 2 3]; median x", 3, ["2"]),
+            (":= x [1 1 2 2 2 3]; mode x", 3, ["2"]),
+            (":= x [1 2 3]; := y (sum x); sqrt y; var x", 3, ["2.45", "1"]),
+        ]
+        async def test():
+            session = Session("test_calc_stats_precision", portable=True)
+            for expression, precision, expected in STATS_PRECISION_TESTS:
+                call = ToolCall(
+                    function=ToolCallFunction(
+                        name="calculate",
+                        arguments={"expression": expression, "precision": precision},
+                    ),
+                )
+                result = await execute_tool_call(call, session)
+                assert result == expected, (
+                    f"Failed for {expression} with precision={precision}: "
+                    f"expected {expected}, got {result}"
+                )
+            session.delete()
+        asyncio.run(test())
+
     def test_error_cases(self):
         """Test error handling."""
         ERROR_TESTS: list[tuple[str, str]] = [

@@ -26,21 +26,32 @@ ESC_TIMEOUT = 0.01
 CTRL_BACKSPACE = "\x08"
 CTRL_DEL = "\x7f"
 CTRL_D_EOF = "\x04"
+CTRL_L_CLEAR = "\x0c"
 ESC = "\x1b"
 CTRL_E_BLOCK = "\x05"
 CTRL_C_CANCEL = "\x03"
 
 # --- Arrow sequences (bytes following ESC) ---
-ARROW_UP_SEQS = ("[A", "OA")
-ARROW_DOWN_SEQS = ("[B", "OB")
+ARROW_UP_SEQS = ("[A", "OA", "[5A", "[1;5A", "[1;2A")
+ARROW_DOWN_SEQS = ("[B", "OB", "[5B", "[1;5B", "[1;2B")
+ARROW_LEFT_SEQS = ("[D", "OD", "[5D", "[1;5D", "[1;2D")
+ARROW_RIGHT_SEQS = ("[C", "OC", "[5C", "[1;5C", "[1;2C")
+CTRL_LEFT_SEQS = ("[5D", "[1;5D")
+CTRL_RIGHT_SEQS = ("[5C", "[1;5C")
+HOME_SEQS = ("[H", "OH")
+END_SEQS = ("[F", "OF")
+PAGE_UP_SEQS = ("[5~",)
+PAGE_DOWN_SEQS = ("[6~",)
 
 # --- ANSI terminal sequences ---
 CR = "\r"
 LF = "\n"
 CLEAR_LINE = f"{ESC}[K"
 CLEAR_ENTIRE_LINE = f"{ESC}[2K"
+CLEAR_SCREEN = f"{ESC}[2J"
 MOVE_DOWN_1 = f"{ESC}[1B"
 MOVE_TO_LINE_START = f"{ESC}[1G"
+MOVE_TO_ORIGIN = f"{ESC}[1H"
 ERASE_LAST_CHAR = "\b \b"
 
 # --- ANSI color/style codes ---
@@ -90,6 +101,7 @@ class Console:
         self.width = 80
         self.height = 24
         self._col = 0
+        self._cursor = 0
         self._cancel_requested = False
         self._fixed_lines: list[str] = []
         self._stream_line = ""
@@ -108,6 +120,7 @@ class Console:
                     continue
 
         self._line = ""
+        self._cursor = 0
         self._history_index = len(self._history)
         self._active = True
         self._fixed_lines = []
@@ -133,6 +146,7 @@ class Console:
                 if self._cancel_requested:
                     self._cancel_requested = False
                     self._line = ""
+                    self._cursor = 0
                     stdout.write("^C\n")
                     stdout.write(self.prompt)
                     stdout.flush()
@@ -144,6 +158,7 @@ class Console:
                 if self._cancel_requested:
                     self._cancel_requested = False
                     self._line = ""
+                    self._cursor = 0
                     stdout.write("^C\n")
                     stdout.write(self.prompt)
                     stdout.flush()
@@ -177,20 +192,23 @@ class Console:
                     await self._handle_escape()
                     continue
 
+                if char == CTRL_L_CLEAR:
+                    self._clear_screen()
+                    self._redraw()
+                    continue
+
                 if char == CTRL_E_BLOCK:
                     self._line = ""
                     self._redraw()
                     return BlockRequest()
 
                 if char.isprintable():
-                    if self._col + 1 >= self.width:
-                        self._lines_used += 1
-                        self._col = 0
-                    else:
-                        self._col += 1
-                    self._line += char
-                    stdout.write(char)
-                    stdout.flush()
+                    self._line = (
+                        self._line[: self._cursor] + char
+                        + self._line[self._cursor :]
+                    )
+                    self._cursor += 1
+                    self._redraw()
         finally:
             self._active = False
             loop.remove_signal_handler(signal.SIGWINCH)
@@ -214,6 +232,7 @@ class Console:
 
         self._buffer = [""]
         self._line = ""
+        self._cursor = 0
         self._history_index = len(self._history)
         self._active = True
         self._in_block = True
@@ -284,6 +303,11 @@ class Console:
 
                 if char == ESC:
                     await self._handle_escape()
+                    continue
+
+                if char == CTRL_L_CLEAR:
+                    self._clear_screen()
+                    self._redraw()
                     continue
 
                 if char.isprintable():
@@ -407,30 +431,71 @@ class Console:
         self._stream_line = ""
 
     async def _read_char(self) -> str | None:
-        """Read one character without blocking. Returns `None` on EOF."""
+        """Read one Unicode character without blocking.
+            Returns `None` on EOF.
+        """
         while True:
             if self._cancel_requested:
                 return CTRL_C_CANCEL
             ready, _, _ = select.select([stdin], [], [], 0)
-            if ready:
-                data = os.read(self.fd, 1)
-                if not data:
-                    return None
-                return data.decode(errors="replace")
-            await asyncio.sleep(POLL_INTERVAL)
+            if not ready:
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
+            first = os.read(self.fd, 1)
+            if not first:
+                return None
+            code = first[0]
+            if code < 0x80:
+                n = 1
+            elif 0xC0 <= code < 0xE0:
+                n = 2
+            elif 0xE0 <= code < 0xF0:
+                n = 3
+            else:
+                n = 4
+            data = first
+            while len(data) < n:
+                ready, _, _ = select.select([stdin], [], [], 0)
+                if not ready:
+                    return "\ufffd"
+                b = os.read(self.fd, 1)
+                if not b:
+                    return "\ufffd"
+                data += b
+            try:
+                return data.decode("utf-8")
+            except UnicodeDecodeError:
+                return "\ufffd"
 
     async def _read_escape_sequence(self) -> str:
-        """Read up to two bytes following an escape character."""
+        """Read the escape sequence bytes following an escape character."""
         data = b""
 
-        for _ in range(2):
+        ready, _, _ = select.select([stdin], [], [], ESC_TIMEOUT)
+        if not ready:
+            return ""
+        byte = os.read(self.fd, 1)
+        if not byte:
+            return ""
+        data += byte
+
+        if byte == b"[":
+            while True:
+                ready, _, _ = select.select([stdin], [], [], ESC_TIMEOUT)
+                if not ready:
+                    break
+                b = os.read(self.fd, 1)
+                if not b:
+                    break
+                data += b
+                if b >= b"@":
+                    break
+        elif byte == b"O":
             ready, _, _ = select.select([stdin], [], [], ESC_TIMEOUT)
-            if not ready:
-                break
-            byte = os.read(self.fd, 1)
-            if not byte:
-                break
-            data += byte
+            if ready:
+                b = os.read(self.fd, 1)
+                if b:
+                    data += b
 
         return data.decode(errors="replace")
 
@@ -441,6 +506,24 @@ class Console:
         if sequence in ARROW_UP_SEQS:
             self._recall(-1)
         elif sequence in ARROW_DOWN_SEQS:
+            self._recall(1)
+        elif sequence in ARROW_LEFT_SEQS:
+            if sequence in CTRL_LEFT_SEQS:
+                self._move_cursor_word_left()
+            else:
+                self._move_cursor_left()
+        elif sequence in ARROW_RIGHT_SEQS:
+            if sequence in CTRL_RIGHT_SEQS:
+                self._move_cursor_word_right()
+            else:
+                self._move_cursor_right()
+        elif sequence in HOME_SEQS:
+            self._move_cursor_home()
+        elif sequence in END_SEQS:
+            self._move_cursor_end()
+        elif sequence in PAGE_UP_SEQS:
+            self._recall(-1)
+        elif sequence in PAGE_DOWN_SEQS:
             self._recall(1)
 
     def _recall(self, direction: int) -> None:
@@ -458,15 +541,92 @@ class Console:
         if index >= len(self._history):
             self._history_index = len(self._history)
             self._line = ""
+            self._cursor = 0
             if self._in_block:
                 self._buffer = [""]
         else:
             self._history_index = index
             self._line = self._history[index]
+            if not self._in_block:
+                self._cursor = len(self._line)
             if self._in_block:
                 self._buffer = self._line.split("\n") if self._line else [""]
 
         self._redraw()
+
+    def _move_cursor_left(self) -> None:
+        """Move cursor left one position, if possible."""
+        if not self._in_block and self._cursor > 0:
+            self._cursor -= 1
+            self._redraw()
+
+    def _move_cursor_right(self) -> None:
+        """Move cursor right one position, if possible."""
+        if not self._in_block and self._cursor < len(self._line):
+            self._cursor += 1
+            self._redraw()
+
+    def _move_cursor_home(self) -> None:
+        """Move cursor to the beginning of the line, if possible."""
+        if not self._in_block and self._cursor != 0:
+            self._cursor = 0
+            self._redraw()
+
+    def _move_cursor_end(self) -> None:
+        """Move cursor to the end of the line, if possible."""
+        if not self._in_block and self._cursor != len(self._line):
+            self._cursor = len(self._line)
+            self._redraw()
+
+    def _move_cursor_word_left(self) -> None:
+        """Move cursor left to the previous word boundary."""
+        if self._in_block:
+            return
+        if self._cursor == 0:
+            return
+        line = self._line
+        pos = self._cursor
+        if pos > 0 and not line[pos - 1].isspace():
+            while pos > 0 and not line[pos - 1].isspace():
+                pos -= 1
+        else:
+            while pos > 0 and line[pos - 1].isspace():
+                pos -= 1
+            while pos > 0 and not line[pos - 1].isspace():
+                pos -= 1
+        self._cursor = pos
+        self._redraw()
+
+    def _move_cursor_word_right(self) -> None:
+        """Move cursor right to the next word boundary."""
+        if self._in_block:
+            return
+        if self._cursor >= len(self._line):
+            return
+        line = self._line
+        pos = self._cursor
+        if pos < len(line) and line[pos].isspace():
+            while pos < len(line) and line[pos].isspace():
+                pos += 1
+            while pos < len(line) and not line[pos].isspace():
+                pos += 1
+        else:
+            while pos < len(line) and not line[pos].isspace():
+                pos += 1
+            while pos < len(line) and line[pos].isspace():
+                pos += 1
+        self._cursor = pos
+        self._redraw()
+
+    def _clear_screen(self) -> None:
+        """Clear the terminal screen, if possible."""
+        if self._fallback:
+            return
+        stdout.write(CLEAR_SCREEN)
+        stdout.write(MOVE_TO_ORIGIN)
+        stdout.flush()
+        self._lines_used = 1
+        self._col = 0
 
     def _on_sigint(self, *args) -> None:
         """Handle Ctrl-C by requesting cancellation."""
@@ -480,10 +640,7 @@ class Console:
         self._redraw()
 
     def _erase_char(self) -> None:
-        """Remove the last character from the line and the display."""
-        if not self._line:
-            return
-
+        """Remove the character before the cursor and redraw."""
         if self._in_block:
             if self._buffer[-1]:
                 self._buffer[-1] = self._buffer[-1][:-1]
@@ -492,19 +649,11 @@ class Console:
             self._line = "\n".join(self._buffer)
             self._redraw()
         else:
-            old_total = visual_length(self.prompt) + visual_length(self._line)
-            self._line = self._line[:-1]
-            new_total = visual_length(self.prompt) + visual_length(self._line)
-
-            old_line = old_total // self.width
-            new_line = new_total // self.width
-
-            if new_line < old_line:
-                self._redraw()
-            else:
-                self._col = new_total % self.width
-                stdout.write(ERASE_LAST_CHAR)
-        stdout.flush()
+            if self._cursor == 0:
+                return
+            self._line = self._line[: self._cursor - 1] + self._line[self._cursor :]
+            self._cursor -= 1
+            self._redraw()
 
     def _redraw(self) -> None:
         """Redraw the prompt and current line."""
@@ -517,7 +666,6 @@ class Console:
         else:
             total = visual_length(self.prompt) + visual_length(self._line)
             line_num = total // self.width
-            col = total % self.width
             new_lines_used = line_num + 1
 
         to_clear = max(old_lines_used, new_lines_used)
@@ -535,10 +683,21 @@ class Console:
             stdout.write(ansi_move_up(to_clear - 1))
         stdout.write(CR)
 
-        self._col = col
         self._lines_used = new_lines_used
 
         stdout.write(self.prompt + self._line)
+
+        if not self._in_block:
+            total = visual_length(self.prompt) + visual_length(self._line)
+            cursor_pos = (
+                visual_length(self.prompt)
+                + visual_length(self._line[: self._cursor])
+            )
+            self._col = cursor_pos % self.width
+            move_back = total - cursor_pos
+            if move_back > 0:
+                stdout.write(f"{ESC}[{move_back}D")
+
         stdout.flush()
 
     def _cursor_position(self) -> tuple[int, int]:

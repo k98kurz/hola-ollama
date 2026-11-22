@@ -46,6 +46,19 @@ def _float_array(value: list, op: Callable, other: Any) -> list:
     return [[float(x) for x in row] for row in arr]
 
 
+def _extract_values(args: tuple[Any, ...]) -> list:
+    """Normalize a single vector/list argument or positional args into a
+        flat list of numeric values.
+    """
+    if len(args) == 1:
+        arg0 = args[0]
+        if isinstance(arg0, Vector):
+            return arg0.data
+        if isinstance(arg0, list):
+            return arg0
+    return list(args)
+
+
 FUNCTIONS = {
     "+", "-", "*", "/", "%", "^", "!",
     "sum", "avg", "stdev", "var", "median", "mode",
@@ -534,47 +547,34 @@ class Evaluator:
             return result
 
         def sum_impl(*args):
-            if len(args) == 1 and isinstance(args[0], list):
-                vals = args[0]
-            else:
-                vals = list(args)
+            vals = _extract_values(args)
             return sum(vals)
 
         def avg(*args):
-            if len(args) == 1 and isinstance(args[0], list):
-                vals = args[0]
-            else:
-                vals = list(args)
+            vals = _extract_values(args)
             if not vals:
                 raise ToolExecutionError("Average of empty list")
             return sum(vals) / len(vals)
 
         def stdev(*args):
-            if len(args) == 1 and isinstance(args[0], list):
-                vals = args[0]
-            else:
-                vals = list(args)
+            vals = _extract_values(args)
             if len(vals) < 2:
                 raise ToolExecutionError("Stdev requires at least 2 values")
             mean = sum(vals) / len(vals)
             variance = sum((x - mean) ** 2 for x in vals) / (len(vals) - 1)
+            if isinstance(variance, Decimal):
+                return variance.sqrt()
             return variance ** 0.5
 
         def variance(*args):
-            if len(args) == 1 and isinstance(args[0], list):
-                vals = args[0]
-            else:
-                vals = list(args)
+            vals = _extract_values(args)
             if len(vals) < 2:
                 raise ToolExecutionError("Variance requires at least 2 values")
             mean = sum(vals) / len(vals)
             return sum((x - mean) ** 2 for x in vals) / (len(vals) - 1)
 
         def median(*args):
-            if len(args) == 1 and isinstance(args[0], list):
-                vals = sorted(args[0])
-            else:
-                vals = sorted(list(args))
+            vals = sorted(_extract_values(args))
             if not vals:
                 raise ToolExecutionError("Median of empty list")
             n = len(vals)
@@ -583,10 +583,7 @@ class Evaluator:
             return (vals[n // 2 - 1] + vals[n // 2]) / 2
 
         def mode(*args):
-            if len(args) == 1 and isinstance(args[0], list):
-                vals = args[0]
-            else:
-                vals = list(args)
+            vals = _extract_values(args)
             if not vals:
                 raise ToolExecutionError("Mode of empty list")
             counts = Counter(vals)
@@ -642,7 +639,7 @@ class Evaluator:
         def sqrt(x):
             if x < 0:
                 raise ToolExecutionError(f"sqrt of negative number: {x}")
-            return x ** 0.5
+            return x.sqrt() if isinstance(x, Decimal) else x ** 0.5
 
         def abs_impl(x):
             return abs(x)
