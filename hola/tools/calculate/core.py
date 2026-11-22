@@ -1133,12 +1133,19 @@ class Evaluator:
 
 @tool(
     name="calculate",
-    description="Evaluate mathematical expressions using Polish notation. "
-    "Supports variable assignment with :=, arithmetic operators (+, -, *, /, %, ^, "
-    "!), statistical functions (sum, avg, stdev, var, median, mode), "
+    description="Evaluate mathematical expressions using Polish notation.\n"
+    "Supports variable assignment (e.g. `:= x 5`), arithmetic operators (+, -, "
+    "*, /, %, ^, !), statistical functions (sum, avg, stdev, var, median, mode), "
     "trigonometric functions (sin, cos, tan, asin, acos, atan, sinh, cosh, tanh), "
     "and math functions (sqrt, abs, round, floor, ceil, exp, ln, log, gcd, lcm). "
     "Variables are scoped to the tool call. Use precision>0 for Decimal arithmetic."
+    "\nMultiple expressions can be evaluated.\n"
+    "Vectors can be created with brackets (e.g. `[1 2 3]`) and matrices with "
+    "double brackets (e.g. [[1 2 3] [3 2 1]]).\n"
+    "Examples:\n- `sum 1 2 3 4; tanh 4.2`\n"
+    "- `:= x [1 2 3]; sqrt (sum x); var x`\n"
+    "- `:= A [[1 2] [3 4]]; := B [[2 1] [4 3]]; det A; trace A; transpose A; "
+    "matmul A B`"
 )
 def calculate(expression: str, precision: int = 0) -> list[str]:
     """Evaluate Polish notation expression. Returns list of string results."""

@@ -2,9 +2,11 @@
 Tests for python tool.
 """
 
+from __future__ import annotations
 from pathlib import Path
 from hola.errors import VerificationException, PermissionDeniedError
 from hola.permissions import Permission
+from hola.tools.core import get_tool
 from hola.session.session import Session
 from hola.tools.python import _verify_blacklist, DEFAULT_ALLOWED_MODULES, python
 import shutil
@@ -20,6 +22,32 @@ class TestPythonTool(unittest.TestCase):
     def tearDown(self):
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
+
+    def test_python_tool_schema(self):
+        tool_def = get_tool("python")
+        assert tool_def is not None, "python tool should be registered"
+
+        schema = tool_def.parameters
+        assert schema["type"] == "object", schema
+
+        props = schema["properties"]
+        assert "code" in props, props
+        assert "timeout" in props, props
+        assert "session" not in props, props
+
+        assert "code" in schema["required"], schema["required"]
+        assert "timeout" not in schema["required"], schema["required"]
+        assert "session" not in schema["required"], schema["required"]
+
+        assert props["code"]["type"] == "string", (props["code"]["type"], "string")
+        assert props["timeout"]["type"] == "integer", (
+            props["timeout"]["type"], "integer"
+        )
+        assert props["timeout"].get("default") == 5, props["timeout"].get("default")
+
+        assert not any(
+            key.startswith("__") or key == "return" for key in props
+        ), props
 
     def test_safe_code_passes_blacklist(self):
         _verify_blacklist("x = 1 + 2")

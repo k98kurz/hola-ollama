@@ -5,6 +5,7 @@ API keys, tool selection, and a thinking-mode toggle.
 """
 
 from . import ChatHarness, Console
+from .ainput import CYAN, RESET
 from hola.client import BaseClient, ClientConfig
 from hola.session import Session
 from hola.tools.types import ToolDefinition
@@ -12,7 +13,7 @@ from hola.tools.types import ToolDefinition
 
 DEFAULT_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "qwen3.5:2b"
-DEFAULT_PROMPT = "you> "
+DEFAULT_PROMPT = f"{CYAN}you>{RESET} "
 DEFAULT_SESSION = "hola-cli"
 
 

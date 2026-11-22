@@ -4,7 +4,7 @@ Tool system for function registration and execution.
 
 from __future__ import annotations
 from types import UnionType
-from typing import Any, Callable
+from typing import Any, Callable, get_type_hints
 from hola.errors import PermissionDeniedError, ToolExecutionError
 from hola.tools.types import (
     ToolCall,
@@ -244,14 +244,15 @@ def _interpolate_arguments(
 def _generate_schema(func: Callable[..., Any]) -> dict[str, Any]:
     """Generate JSON schema from function type hints."""
     sig = inspect.signature(func)
+    hints = get_type_hints(func)
     parameters = {}
 
     for param_name, param in sig.parameters.items():
         if param_name == "self" or param_name == "session":
             continue
 
-        param_type = param.annotation
-        if param_type is inspect.Parameter.empty:
+        param_type = hints.get(param_name)
+        if param_type is None:
             param_type = Any
 
         param_schema = _type_to_schema(param_type)

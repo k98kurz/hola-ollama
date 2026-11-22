@@ -1,4 +1,6 @@
-from .ainput import BlockRequest, Console
+from .ainput import (
+    BlockRequest, Console, RED, MAGENTA, BLUE, GREEN, CYAN, RESET, YELLOW
+)
 from .response_fsm import ResponseFSM, ResponseEvent, ResponseState
 from collections.abc import AsyncGenerator
 from typing import Awaitable, Callable
@@ -13,6 +15,7 @@ from hola.types import (
 import asyncio
 import contextlib
 import json
+import traceback
 
 
 def _param_schema_type(v: dict) -> str:
@@ -283,18 +286,18 @@ class ChatHarness:
             self, transition, context: dict, data: object
         ) -> None:
         if context.get("stream_thinking"):
-            await context["console"].write_stream("<thought>\n")
+            await context["console"].write_stream(f"{GREEN}<thought>{RESET}\n")
 
     async def _close_thought_hook(
             self, transition, context: dict, data: object
         ) -> None:
         if context.get("stream_thinking"):
-            await context["console"].write_stream("\n</thought>\n\n")
+            await context["console"].write_stream(f"\n{GREEN}</thought>{RESET}\n\n")
 
     async def _write_prefix_hook(
             self, transition, context: dict, data: object
         ) -> None:
-        await context["console"].write_stream("assistant> ")
+        await context["console"].write_stream(f"{GREEN}assistant>{RESET} ")
 
     def submit(self, text: str) -> None:
         """Queue a user message for the worker."""
@@ -370,7 +373,11 @@ class ChatHarness:
                     raise
                 except Exception as error:
                     self.history.pop()
-                    await self.console.write_line(f"[error] {error}")
+                    await self.console.write_line(f"{RED}[error] {error}{RESET}")
+                    if self.verbose:
+                        await self.console.write_line(
+                            f"{MAGENTA}{traceback.format_exc()}{RESET}"
+                        )
                     break
 
                 self.history.append(assistant)
@@ -388,8 +395,9 @@ class ChatHarness:
                         result = f"Tool execution error: {error}"
                     if self.verbose:
                         await self.console.write_line(
+                            f"{YELLOW}"
                             f"<tool name={tc.function.name} callid={tc.call_id}>"
-                            f"{result}</tool>"
+                            f"{result}</tool>{RESET}"
                         )
                     self.history.append(Message(
                         role=Role.TOOL,
@@ -438,9 +446,9 @@ class ChatHarness:
                     tc_lines = []
                     for tc in tool_calls:
                         tc_lines.append(
-                            f"<call id={tc.call_id} "
+                            f"{YELLOW}<call id={tc.call_id} "
                             f"name={tc.function.name} "
-                            f"args={json.dumps(tc.function.arguments)} />"
+                            f"args={json.dumps(tc.function.arguments)} />{RESET}"
                         )
                     if fsm.current is ResponseState.CALLING_TOOLS:
                         await self.console.write_stream("\n".join(tc_lines) + "\n")
@@ -454,8 +462,11 @@ class ChatHarness:
                 if chunk.done:
                     break
         except Exception as e:
-            await self.console.write_line(f"An error was encountered: {e}")
-            raise
+            await self.console.write_line(f"{RED}[error] {e}{RESET}")
+            if self.verbose:
+                await self.console.write_line(
+                    f"{MAGENTA}{traceback.format_exc()}{RESET}"
+                )
         finally:
             await fsm.input(ResponseEvent.END_RESPONSE)
             await self.console.write_stream("", done=True)
@@ -474,21 +485,21 @@ class ChatHarness:
         """
         thinking = response.message.thinking or ""
         content = response.message.content or ""
-        tool_calls = response.message.tool_calls
+        tool_calls = response.message.tool_calls or []
 
         lines = [""]
         if thinking and self.show_thinking:
-            lines.append(f"<thought>\n{thinking}\n</thought>")
+            lines.append(f"{GREEN}<thought>\n{thinking}\n</thought>{RESET}")
             lines.append("")
 
         if content:
-            lines.append(f"assistant> {content}")
+            lines.append(f"{GREEN}assistant>{RESET} {content}")
 
         for tc in tool_calls:
             lines.append(
-                f"<call id={tc.call_id} "
+                f"{YELLOW}<call id={tc.call_id} "
                 f"name={tc.function.name} "
-                f"args={json.dumps(tc.function.arguments)} />"
+                f"args={json.dumps(tc.function.arguments)} />{RESET}"
             )
 
         await self.console.write_line("\n".join(lines))
@@ -503,20 +514,23 @@ class ChatHarness:
     async def reprint(self):
         for m in self.history:
             if m.role is Role.SYSTEM:
-                await self.console.write_line(f"[system] {m.content}")
+                await self.console.write_line(f"{BLUE}[system]{RESET} {m.content}")
             elif m.role is Role.USER:
-                await self.console.write_line(f"[user] {m.content}")
+                await self.console.write_line(f"{CYAN}[user]{RESET} {m.content}")
             elif m.role is Role.ASSISTANT:
                 if m.thinking and self.show_thinking:
                     await self.console.write_line(
-                        f"<thought>\n{m.thinking}\n</thought>"
+                        f"{GREEN}<thought>{RESET}\n{m.thinking}\n"
+                        f"{GREEN}</thought>{RESET}"
                     )
                 if m.content:
-                    await self.console.write_line(f"[assistant] {m.content}")
+                    await self.console.write_line(
+                        f"{GREEN}[assistant]{RESET} {m.content}"
+                    )
                 for tc in m.tool_calls or []:
                     await self.console.write_line(
-                        f"<call id={tc.call_id} name={tc.function.name} "
-                        f"args={json.dumps(tc.function.arguments)} />"
+                        f"{YELLOW}<call id={tc.call_id} name={tc.function.name} "
+                        f"args={json.dumps(tc.function.arguments)} />{RESET}"
                     )
             elif m.role is Role.TOOL:
-                await self.console.write_line(f"[tool] {m.content}")
+                await self.console.write_line(f"{YELLOW}[tool]{RESET} {m.content}")

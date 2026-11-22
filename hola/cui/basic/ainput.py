@@ -7,6 +7,7 @@ from collections import deque
 from sys import stdin, stdout
 import asyncio
 import os
+import re
 import select
 import signal
 
@@ -41,6 +42,25 @@ CLEAR_ENTIRE_LINE = f"{ESC}[2K"
 MOVE_DOWN_1 = f"{ESC}[1B"
 MOVE_TO_LINE_START = f"{ESC}[1G"
 ERASE_LAST_CHAR = "\b \b"
+
+# --- ANSI color/style codes ---
+RESET = f"{ESC}[0m"
+BOLD = f"{ESC}[1m"
+BLACK = f"{ESC}[30m"
+RED = f"{ESC}[31m"
+GREEN = f"{ESC}[32m"
+YELLOW = f"{ESC}[33m"
+BLUE = f"{ESC}[34m"
+MAGENTA = f"{ESC}[35m"
+CYAN = f"{ESC}[36m"
+WHITE = f"{ESC}[37m"
+
+_ANSI_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def visual_length(text: str) -> int:
+    """Return the visual width of `text`, ignoring ANSI escape codes."""
+    return len(_ANSI_PATTERN.sub("", text))
 
 
 def ansi_move_up(n: int) -> str:
@@ -103,7 +123,7 @@ class Console:
             ts = os.get_terminal_size(self.fd)
             self.width = ts.columns
             self.height = ts.lines
-            prompt_total = len(self.prompt)
+            prompt_total = visual_length(self.prompt)
             self._lines_used = prompt_total // self.width + 1
             self._col = prompt_total % self.width
             stdout.write(self.prompt)
@@ -116,7 +136,7 @@ class Console:
                     stdout.write("^C\n")
                     stdout.write(self.prompt)
                     stdout.flush()
-                    self._col = len(self.prompt) % self.width
+                    self._col = visual_length(self.prompt) % self.width
                     continue
 
                 char = await self._read_char()
@@ -127,7 +147,7 @@ class Console:
                     stdout.write("^C\n")
                     stdout.write(self.prompt)
                     stdout.flush()
-                    self._col = len(self.prompt) % self.width
+                    self._col = visual_length(self.prompt) % self.width
                     continue
 
                 if char is None:
@@ -371,7 +391,7 @@ class Console:
         """Count visual lines a single logical line occupies at the
             current terminal width, accounting for wrapping.
         """
-        L = len(line)
+        L = visual_length(line)
         if L == 0:
             return 1
         if L % self.width == 0:
@@ -472,9 +492,9 @@ class Console:
             self._line = "\n".join(self._buffer)
             self._redraw()
         else:
-            old_total = len(self.prompt) + len(self._line)
+            old_total = visual_length(self.prompt) + visual_length(self._line)
             self._line = self._line[:-1]
-            new_total = len(self.prompt) + len(self._line)
+            new_total = visual_length(self.prompt) + visual_length(self._line)
 
             old_line = old_total // self.width
             new_line = new_total // self.width
@@ -495,7 +515,7 @@ class Console:
             line_num, col = self._cursor_position()
             new_lines_used = line_num + 1
         else:
-            total = len(self.prompt) + len(self._line)
+            total = visual_length(self.prompt) + visual_length(self._line)
             line_num = total // self.width
             col = total % self.width
             new_lines_used = line_num + 1
@@ -528,7 +548,7 @@ class Console:
         lines = [self.prompt + self._buffer[0]] + self._buffer[1:]
         line_num = 0
         for line in lines[:-1]:
-            L = len(line)
+            L = visual_length(line)
             if L == 0:
                 line_num += 1
             elif L % self.width == 0:
@@ -536,7 +556,7 @@ class Console:
             else:
                 line_num += (L - 1) // self.width + 1
         last = lines[-1]
-        L = len(last)
+        L = visual_length(last)
         if L == 0:
             return line_num, 0
         if L % self.width == 0:

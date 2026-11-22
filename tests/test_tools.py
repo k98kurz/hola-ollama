@@ -2,6 +2,7 @@
 Tests for tool system functionality and XML compatibility layer.
 """
 
+from __future__ import annotations
 from pathlib import Path
 from hola.session.session import Session
 from hola.tools import (
@@ -24,8 +25,8 @@ from hola.tools.compat import (
     process_assistant_message,
 )
 from hola.tools.core import (
-    _interpolate_template,
     _interpolate_arguments,
+    _interpolate_template,
 )
 import asyncio
 import shutil
