@@ -3,6 +3,7 @@ from .ainput import (
 )
 from .response_fsm import ResponseFSM, ResponseEvent, ResponseState
 from collections.abc import AsyncGenerator
+from dataclasses import fields
 from typing import Awaitable, Callable
 from hola.client import BaseClient
 from hola.errors import type_assert, value_assert
@@ -10,7 +11,7 @@ from hola.prompts.adapters import tool_enabled_chat_adapter
 from hola.tools.core import execute_tool_call
 from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
 from hola.types import (
-    ChatResponse, ChatResponseChunk, Message, Role, SessionProtocol
+    ChatResponse, ChatResponseChunk, Message, MessageStats, Role, SessionProtocol
 )
 import asyncio
 import contextlib
@@ -68,6 +69,7 @@ class ChatHarness:
         self.slash_commands = {}
         self._register_slash_commands()
         self.effort = None
+        self.show_stats = True
 
     def slash(self, command: str, description: str = ''):
         """Decorator for registering a slash command. Calls
@@ -109,6 +111,7 @@ class ChatHarness:
                 "verbose": self.verbose,
                 "system": self.system,
                 "effort": self.effort,
+                "stats": self.show_stats,
             }
             parts = text.split()
             if len(parts) == 2:
@@ -121,21 +124,18 @@ class ChatHarness:
 
         @self.slash("stream", "toggle response streaming")
         async def toggle_streaming(_: str):
-            if self.stream_response:
-                self.stream_response = False
-                await self.console.write_line("Response streaming disabled")
-            else:
-                self.stream_response = True
-                await self.console.write_line("Response streaming enabled")
+            self.stream_response = not self.stream_response
+            await self.console.write_line(
+                "Response streaming enabled" if self.stream_response else
+                "Response streaming disabled"
+            )
 
         @self.slash("thinking", "toggle show thinking")
         async def toggle_thinking(_: str):
-            if self.show_thinking:
-                self.show_thinking = False
-                await self.console.write_line("Thinking hidden")
-            else:
-                self.show_thinking = True
-                await self.console.write_line("Thinking shown")
+            self.show_thinking = not self.show_thinking
+            await self.console.write_line(
+                "Thinking shown" if self.show_thinking else "Thinking hidden"
+            )
 
         @self.slash("system", "change or view the system prompt")
         async def system(text: str):
@@ -154,6 +154,13 @@ class ChatHarness:
         @self.slash("noeffort", "unset the reasoning effort")
         def noeffort(_: str):
             self.effort = None
+
+        @self.slash("stats", "toggle show stats")
+        async def stats(_: str):
+            self.show_stats = not self.show_stats
+            await self.console.write_line(
+                "Stats shown" if self.show_stats else "Stats hidden"
+            )
 
         @self.slash("rollback", "rollback the message history one turn")
         async def rollback(_: str):
@@ -441,15 +448,21 @@ class ChatHarness:
         thinking_parts: list[str] = []
         content_parts: list[str] = []
         tool_calls: list[ToolCall] = []
+        last_chunk: ChatResponseChunk | None = None
         fsm = self.response_fsm
         fsm.context["console"] = self.console
         fsm.context["stream_thinking"] = stream_thinking
         fsm.reset()
+        stat_fields = [f.name for f in fields(MessageStats)]
 
         try:
+            stats = MessageStats(*[0 for _ in range(len(stat_fields))])
             async for chunk in stream:
                 thinking = chunk.message.thinking or None
                 content = chunk.message.content or ""
+                for f in stat_fields:
+                    if getattr(chunk, f, None):
+                        setattr(stats, f, getattr(stats, f) + getattr(chunk, f))
 
                 if thinking:
                     thinking_parts.append(thinking)
@@ -490,12 +503,25 @@ class ChatHarness:
             await fsm.input(ResponseEvent.END_RESPONSE)
             await self.console.write_stream("", done=True)
 
+        stats.total_duration /= 1_000_000_000
+        stats.load_duration /= 1_000_000_000
+        stats.prompt_duration /= 1_000_000_000
+        stats.output_duration /= 1_000_000_000
+        if stats.prompt_tokens and stats.prompt_duration:
+            stats.prompt_tps = stats.prompt_tokens / stats.prompt_duration
+        if stats.output_tokens and stats.output_duration:
+            stats.output_tps = stats.output_tokens / stats.output_duration
+
         thinking = "".join(thinking_parts) or None
+        if self.show_stats and stats:
+            await self.console.write_line(f"[stats] {stats}\n")
+
         return Message(
             role=Role.ASSISTANT,
             content="".join(content_parts),
             thinking=thinking,
             tool_calls=tool_calls,
+            stats=stats,
         )
 
     async def _print_response(self, response: ChatResponse) -> Message:
@@ -522,6 +548,25 @@ class ChatHarness:
                 f"args={json.dumps(tc.function.arguments)} />{RESET}"
             )
 
+        stats = MessageStats(
+            total_duration=response.total_duration or 0,
+            load_duration=response.load_duration or 0,
+            prompt_tokens=response.prompt_tokens or 0,
+            prompt_duration=response.prompt_duration or 0,
+            output_tokens=response.output_tokens or 0,
+            output_duration=response.output_duration or 0,
+        )
+        stats.total_duration /= 1_000_000_000
+        stats.load_duration /= 1_000_000_000
+        stats.prompt_duration /= 1_000_000_000
+        stats.output_duration /= 1_000_000_000
+        if stats.prompt_tokens and stats.prompt_duration:
+            stats.prompt_tps = stats.prompt_tokens / stats.prompt_duration
+        if stats.output_tokens and stats.output_duration:
+            stats.output_tps = stats.output_tokens / stats.output_duration
+        if self.show_stats:
+            lines.append(f"[stats] {stats}")
+
         await self.console.write_line("\n".join(lines))
 
         return Message(
@@ -529,6 +574,7 @@ class ChatHarness:
             content=content,
             thinking=thinking,
             tool_calls=tool_calls,
+            stats=stats,
         )
 
     async def reprint(self):
@@ -554,5 +600,7 @@ class ChatHarness:
                         f"{YELLOW}<call id={tc.call_id} name={tc.function.name} "
                         f"args={json.dumps(tc.function.arguments)} />{RESET}"
                     )
+                if m.stats and self.show_stats:
+                    await self.console.write_line(f"[stats] {m.stats}\n")
             elif m.role is Role.TOOL and self.verbose:
                 await self.console.write_line(f"{YELLOW}[tool]{RESET} {m.content}\n")

@@ -135,6 +135,11 @@ def main() -> None:
         default=None,
     )
     chat_parser.add_argument(
+        '--ollama',
+        action='store_true',
+        help='Connect with the OllamaClient'
+    )
+    chat_parser.add_argument(
         '--no-thinking',
         action='store_true',
         help='Disable thinking-mode display',
@@ -211,6 +216,7 @@ def main() -> None:
         host = args.host if args.host is not None else DEFAULT_HOST
         model = args.model if args.model is not None else DEFAULT_MODEL
         show_thinking = not args.no_thinking
+        use_ollama = args.ollama
         tools = resolve_tools_arg(args.tools)
         if args.tools is not None and tools is None:
             return
@@ -218,7 +224,7 @@ def main() -> None:
             asyncio.run(
                 run_chat(
                     host, model, args.system, args.api_key,
-                    show_thinking, tools,
+                    show_thinking, tools, use_ollama,
                 )
             )
         except KeyboardInterrupt:

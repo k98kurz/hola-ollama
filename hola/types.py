@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    'Role', 'Message', 'TokenEstimatable', 'SessionProtocol',
+    'Role', 'MessageStats', 'Message', 'TokenEstimatable', 'SessionProtocol',
     'ChatResponseChunk', 'ChatResponse',
     'ModelInfo', 'ModelMetadata',
     'GenerateChunk', 'GenerateResponse', 'GenerationOptions',
@@ -37,6 +37,30 @@ class Role(Enum):
 
 
 @validated_dataclass
+class MessageStats:
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_tokens: int | None = None
+    prompt_duration: int | None = None
+    output_tokens: int | None = None
+    output_duration: int | None = None
+    prompt_tps: float | None = None
+    output_tps: float | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"total_duration={self.total_duration:.2f} "
+            f"load_duration={self.load_duration:.2f} "
+            f"prompt_tokens={self.prompt_tokens:.2f} "
+            f"prompt_duration={self.prompt_duration:.2f} "
+            f"output_tokens={self.output_tokens:.2f} "
+            f"output_duration={self.output_duration:.2f} "
+            f"prompt_tps={self.prompt_tps:.2f} "
+            f"output_tps={self.output_tps:.2f}"
+        )
+
+
+@validated_dataclass
 class Message:
     role: Role
     content: str
@@ -50,6 +74,7 @@ class Message:
     is_compaction: bool = False
     compacted_by: str | None = None
     call_id: str | None = None
+    stats: MessageStats | None = None
 
     def extra_context_chars(self) -> int:
         return len(packify.pack(self.tool_calls))

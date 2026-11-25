@@ -189,17 +189,7 @@ class OllamaClient(BaseClient):
 
     def _serialize_message(self, message: Message) -> dict:
         """Convert Message to an Ollama-compatible message dict."""
-        result = {
-            "role": message.role.value,
-            "content": message.content,
-        }
-
-        if message.tool_calls is not None:
-            result["tool_calls"] = [
-                self._serialize_tool_call(tc) for tc in message.tool_calls
-            ]
-
-        return result
+        return super()._serialize_message(message)
 
     def _serialize_tool_call(self, tool_call: ToolCall) -> dict:
         """Serialize ToolCall to Ollama API format."""
