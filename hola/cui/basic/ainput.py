@@ -69,9 +69,11 @@ WHITE = f"{ESC}[37m"
 _ANSI_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
 
 
-def visual_length(text: str) -> int:
-    """Return the visual width of `text`, ignoring ANSI escape codes."""
-    return len(_ANSI_PATTERN.sub("", text))
+def visual_length(text: str) -> tuple[int,]:
+    """Calculate the visual widths of each line in `text`, ignoring ANSI
+        escape codes.
+    """
+    return tuple(len(_ANSI_PATTERN.sub("", line)) for line in text.split("\n"))
 
 
 def ansi_move_up(n: int) -> str:
@@ -91,7 +93,7 @@ class Console:
         """Initialize the console with `prompt`."""
         self.prompt = prompt
         self._line = "" # current input line
-        self._lines_used = 1 # how many wrapped lines displayed for self._line
+        self._lines_used = 1 # terminal lines the prompt region occupies
         self._buffer: list[str] = [""] # current input block
         self._in_block = False
         self._history: deque[str] = deque(maxlen=HISTORY_SIZE)
@@ -100,13 +102,16 @@ class Console:
         self._fallback = termios is None or tty is None or not stdin.isatty()
         self.width = 80
         self.height = 24
-        self._col = 0
-        self._cursor = 0
+        self._cursor_row = 0
+        self._cursor_col = 0
+        self._cursor = 0 # flat cursor index into self._line
         self._cancel_requested = False
         self._fixed_lines: list[str] = []
         self._stream_line = ""
         self.fd = stdin.fileno()
         self._stream_lock = asyncio.Lock()
+        if self._fallback:
+            print("<Fallback mode is active>")
 
     async def ainput(self) -> str | None:
         """Read a line asynchronously. Returns `None` on EOF."""
@@ -136,9 +141,7 @@ class Console:
             ts = os.get_terminal_size(self.fd)
             self.width = ts.columns
             self.height = ts.lines
-            prompt_total = visual_length(self.prompt)
-            self._lines_used = prompt_total // self.width + 1
-            self._col = prompt_total % self.width
+            self._reset_bookkeeping()
             stdout.write(self.prompt)
             stdout.flush()
 
@@ -150,7 +153,7 @@ class Console:
                     stdout.write("^C\n")
                     stdout.write(self.prompt)
                     stdout.flush()
-                    self._col = visual_length(self.prompt) % self.width
+                    self._reset_bookkeeping()
                     continue
 
                 char = await self._read_char()
@@ -162,7 +165,7 @@ class Console:
                     stdout.write("^C\n")
                     stdout.write(self.prompt)
                     stdout.flush()
-                    self._col = visual_length(self.prompt) % self.width
+                    self._reset_bookkeeping()
                     continue
 
                 if char is None:
@@ -217,7 +220,7 @@ class Console:
 
     async def ainput_block(self) -> str | None:
         """Read a multi-line block asynchronously. Returns `None` on EOF
-            or Ctrl-C cancel.
+            or Ctrl-D cancel.
         """
         if self._fallback:
             lines: list[str] = []
@@ -254,14 +257,6 @@ class Console:
             stdout.flush()
 
             while True:
-                if self._cancel_requested:
-                    self._cancel_requested = False
-                    self._buffer = [""]
-                    self._line = ""
-                    stdout.write("\n")
-                    stdout.flush()
-                    return None
-
                 char = await self._read_char()
 
                 if self._cancel_requested:
@@ -319,6 +314,7 @@ class Console:
         finally:
             self._active = False
             self._in_block = False
+            self._buffer = [""]
             loop.remove_signal_handler(signal.SIGWINCH)
             loop.remove_signal_handler(signal.SIGINT)
             termios.tcsetattr(self.fd, termios.TCSADRAIN, saved)
@@ -338,8 +334,7 @@ class Console:
             self._stream_line = ""
 
         # erase to the beginning of the prompt line
-        if self._lines_used > 1:
-            stdout.write(ansi_move_up(self._lines_used))
+        stdout.write(ansi_move_up(self._cursor_row))
         stdout.write(MOVE_TO_LINE_START + CLEAR_ENTIRE_LINE + CR)
 
         # then just fucking print the goddamn text
@@ -365,19 +360,20 @@ class Console:
             stdout.flush()
             return
 
-        # erase to the beginning of the most recent streamed line
+        # erase the stream line and the prompt region
         async with self._stream_lock:
-            if self._lines_used > 1:
-                stdout.write(ansi_move_up(self._lines_used))
-            lines_to_clear = self._line_visual(self._stream_line)
-            lines_to_clear += self._line_visual(self.prompt + self._line)
-            if self._in_block:
-                lines_to_clear += self._lines_used - 1
-            if lines_to_clear > 1:
-                for _ in range(lines_to_clear - 1):
-                    stdout.write(CLEAR_ENTIRE_LINE)
-                    stdout.write(ansi_move_up(1))
-            stdout.write(MOVE_TO_LINE_START + CLEAR_ENTIRE_LINE)
+            stream_lines = self._wrap_count(
+                visual_length(self._stream_line)[-1]
+            )
+            total_lines = stream_lines + self._lines_used
+            stdout.write(ansi_move_up(self._cursor_row + stream_lines))
+            for _ in range(total_lines):
+                stdout.write(CLEAR_ENTIRE_LINE)
+                if _ < total_lines - 1:
+                    stdout.write(MOVE_DOWN_1)
+            if total_lines > 1:
+                stdout.write(ansi_move_up(total_lines - 1))
+            stdout.write(MOVE_TO_LINE_START)
 
             # just a single fucking newline
             if not text.strip() and "\n" in text:
@@ -411,16 +407,27 @@ class Console:
         stdout.flush()
         self._update_cursor()
 
-    def _line_visual(self, line: str) -> int:
-        """Count visual lines a single logical line occupies at the
-            current terminal width, accounting for wrapping.
+    def _wrap_count(self, width: int) -> int:
+        """Number of terminal lines required for `width` visual chars."""
+        return (width + self.width - 1) // self.width if width > 0 else 0
+
+    def _position_after_width(self, width: int) -> tuple[int, int]:
+        """Give the `(row, col)` of the cursor position after writing
+            `width` visual characters from the top-left corner.
         """
-        L = visual_length(line)
-        if L == 0:
-            return 1
-        if L % self.width == 0:
-            return L // self.width
-        return (L - 1) // self.width + 1
+        if width == 0:
+            return 0, 0
+        if width % self.width == 0:
+            return width // self.width, 0
+        return (width - 1) // self.width, width % self.width
+
+    def _reset_bookkeeping(self) -> None:
+        """Reset region size and cursor to a prompt-only, empty-line state."""
+        prompt_col = visual_length(self.prompt)[-1]
+        self._lines_used = self._wrap_count(prompt_col)
+        self._cursor_row, self._cursor_col = self._position_after_width(
+            prompt_col
+        )
 
     def close(self) -> None:
         """Clear input state. Terminal attributes are restored by
@@ -547,10 +554,10 @@ class Console:
         else:
             self._history_index = index
             self._line = self._history[index]
-            if not self._in_block:
-                self._cursor = len(self._line)
             if self._in_block:
                 self._buffer = self._line.split("\n") if self._line else [""]
+            else:
+                self._cursor = len(self._line)
 
         self._redraw()
 
@@ -625,8 +632,7 @@ class Console:
         stdout.write(CLEAR_SCREEN)
         stdout.write(MOVE_TO_ORIGIN)
         stdout.flush()
-        self._lines_used = 1
-        self._col = 0
+        self._reset_bookkeeping()
 
     def _on_sigint(self, *args) -> None:
         """Handle Ctrl-C by requesting cancellation."""
@@ -647,32 +653,23 @@ class Console:
             elif len(self._buffer) > 1:
                 self._buffer.pop()
             self._line = "\n".join(self._buffer)
+            self._cursor = len(self._line)
             self._redraw()
         else:
             if self._cursor == 0:
                 return
-            self._line = self._line[: self._cursor - 1] + self._line[self._cursor :]
+            self._line = self._line[:self._cursor - 1] + self._line[self._cursor:]
             self._cursor -= 1
             self._redraw()
 
     def _redraw(self) -> None:
         """Redraw the prompt and current line."""
-        old_line_num = self._lines_used - 1
-        old_lines_used = self._lines_used
+        total, cursor_row, cursor_col = self._layout()
+        to_clear = max(self._lines_used, total)
 
-        if self._in_block:
-            line_num, col = self._cursor_position()
-            new_lines_used = line_num + 1
-        else:
-            total = visual_length(self.prompt) + visual_length(self._line)
-            line_num = total // self.width
-            new_lines_used = line_num + 1
-
-        to_clear = max(old_lines_used, new_lines_used)
-
-        if old_line_num > 0:
-            stdout.write(ansi_move_up(old_line_num))
-        stdout.write(CR)
+        if self._cursor_row:
+            stdout.write(ansi_move_up(self._cursor_row))
+        stdout.write(MOVE_TO_LINE_START + CLEAR_ENTIRE_LINE)
 
         for i in range(to_clear):
             stdout.write(CLEAR_LINE)
@@ -681,49 +678,50 @@ class Console:
 
         if to_clear > 1:
             stdout.write(ansi_move_up(to_clear - 1))
-        stdout.write(CR)
-
-        self._lines_used = new_lines_used
-
+        stdout.write(MOVE_TO_LINE_START)
         stdout.write(self.prompt + self._line)
 
+        end_row, end_col = self._position_after_width(
+            visual_length(self.prompt + self._line)[-1]
+        )
+        move_up = end_row - cursor_row
+        if move_up > 0:
+            stdout.write(ansi_move_up(move_up))
         if not self._in_block:
-            total = visual_length(self.prompt) + visual_length(self._line)
-            cursor_pos = (
-                visual_length(self.prompt)
-                + visual_length(self._line[: self._cursor])
-            )
-            self._col = cursor_pos % self.width
-            move_back = total - cursor_pos
-            if move_back > 0:
-                stdout.write(f"{ESC}[{move_back}D")
+            if end_col > cursor_col:
+                stdout.write(f"{ESC}[{end_col - cursor_col}D")
+            elif end_col < cursor_col:
+                stdout.write(f"{ESC}[{cursor_col - end_col}C")
 
+        self._lines_used = total
+        self._cursor_row = cursor_row
+        self._cursor_col = cursor_col
         stdout.flush()
 
-    def _cursor_position(self) -> tuple[int, int]:
-        """Compute (line_num, col) for the cursor at the end of
-            the multi-line buffer.
+    def _layout(self) -> tuple[int, int, int]:
+        """Screen geometry of `prompt + line`.
+            Returns `(total_lines, cursor_row, cursor_col)`.
         """
-        lines = [self.prompt + self._buffer[0]] + self._buffer[1:]
-        line_num = 0
-        for line in lines[:-1]:
-            L = visual_length(line)
-            if L == 0:
-                line_num += 1
-            elif L % self.width == 0:
-                line_num += L // self.width
-            else:
-                line_num += (L - 1) // self.width + 1
-        last = lines[-1]
-        L = visual_length(last)
-        if L == 0:
-            return line_num, 0
-        if L % self.width == 0:
-            return line_num + L // self.width, 0
-        return line_num + (L - 1) // self.width, L % self.width
+        widths = visual_length(self.prompt + self._line)
+        wraps = tuple(self._wrap_count(w) for w in widths)
+        total = sum(wraps)
+        before = self._line[: self._cursor]
+        line_index = before.count("\n")
+        chunk = before[before.rfind("\n") + 1 :]
+        col = visual_length(chunk)[-1]
+        if line_index == 0:
+            col += visual_length(self.prompt)[-1]
+        base_row = sum(wraps[:line_index])
+        if col == 0:
+            cursor_row, cursor_col = base_row, 0
+        elif col % self.width == 0:
+            cursor_row, cursor_col = base_row + col // self.width, 0
+        else:
+            cursor_row, cursor_col = (
+                base_row + (col - 1) // self.width, col % self.width
+            )
+        return total, cursor_row, cursor_col
 
     def _update_cursor(self) -> None:
-        """Update cursor position from the current buffer state."""
-        line_num, col = self._cursor_position()
-        self._col = col
-        self._lines_used = line_num + 1
+        """Resync bookkeeping after the region was fully rewritten."""
+        self._lines_used, self._cursor_row, self._cursor_col = self._layout()

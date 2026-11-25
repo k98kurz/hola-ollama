@@ -277,6 +277,7 @@ class GenerationOptions:
     top_k: int | None = None
     num_predict: int | None = None
     seed: int | None = None
+    reasoning_effort: str | None = None   
 
 
 @validated_dataclass

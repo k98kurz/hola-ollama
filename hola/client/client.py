@@ -342,6 +342,9 @@ class BaseClient:
         if message.role is Role.TOOL and message.call_id is not None:
             result["tool_call_id"] = message.call_id
 
+        if message.role is Role.ASSISTANT and message.thinking:
+            result["thinking"] = message.thinking
+
         return result
 
     def _serialize_tool(self, tool: ToolDefinition) -> dict:
@@ -386,6 +389,9 @@ class BaseClient:
 
         if options.seed is not None:
             result["seed"] = options.seed
+
+        if options.reasoning_effort is not None:
+            result["reasoning_effort"] = options.reasoning_effort
 
         return result
 

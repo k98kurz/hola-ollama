@@ -67,6 +67,7 @@ class ChatHarness:
         self.stream_response = True
         self.slash_commands = {}
         self._register_slash_commands()
+        self.effort = None
 
     def slash(self, command: str, description: str = ''):
         """Decorator for registering a slash command. Calls
@@ -107,6 +108,7 @@ class ChatHarness:
                 "thinking": self.show_thinking,
                 "verbose": self.verbose,
                 "system": self.system,
+                "effort": self.effort,
             }
             parts = text.split()
             if len(parts) == 2:
@@ -141,6 +143,17 @@ class ChatHarness:
             if text:
                 self.system = text
             await self.console.write_line(f"System prompt: {self.system}")
+
+        @self.slash("effort", "view or change the reasoning effort level")
+        async def effort(text: str):
+            text = text[7:].strip()
+            if text:
+                self.effort = text
+            await self.console.write_line(f"Reasoning effort: {self.effort}")
+
+        @self.slash("noeffort", "unset the reasoning effort")
+        def noeffort(_: str):
+            self.effort = None
 
         @self.slash("rollback", "rollback the message history one turn")
         async def rollback(_: str):
@@ -211,12 +224,7 @@ class ChatHarness:
 
         @self.slash("block", "enter block input mode")
         async def toggle_block_input(_: str):
-            await self.console.write_line("<Block input mode active>")
-            block_text = await self.console.ainput_block()
-            if block_text is None:
-                return
-            if block_text.strip():
-                self.submit(block_text)
+            return await self._handle_block_request()
 
         @self.slash("verbose", "toggle verbose output (tool call results)")
         async def toggle_verbose(_: str):
@@ -242,8 +250,8 @@ class ChatHarness:
             for k,v in commands.items():
                 await self.console.write_line(f"{k}: {v}")
 
-    async def handle_slash_command(self, text: str) -> bool|None:
-        command = text.split(" ")[0]
+    async def handle_slash_command(self, text: str) -> bool | None:
+        command = text.split()[0]
         if command not in self.slash_commands:
             await self.console.write_line(f"unrecognized slash command: {command}\n")
             return
@@ -255,8 +263,6 @@ class ChatHarness:
 
     def reset_history(self):
         self.history.clear()
-        if self.system:
-            self.history.append(Message(role=Role.SYSTEM, content=self.system))
 
     def _register_response_hooks(self) -> None:
         """Register transition hooks on the response FSM for tag and
@@ -317,12 +323,8 @@ class ChatHarness:
                     break
 
                 if isinstance(line, BlockRequest):
-                    await self.console.write_line("<Block input mode active>")
-                    block_text = await self.console.ainput_block()
-                    if block_text is None:
-                        continue
-                    if block_text.strip():
-                        self.submit(block_text)
+                    if await self._handle_block_request():
+                        break
                     continue
 
                 line = line.strip()
@@ -342,6 +344,20 @@ class ChatHarness:
 
             self._worker_task = None
 
+    async def _handle_block_request(self) -> bool | None:
+        await self.console.write_line(
+            "<Block input mode active; use Ctrl-D to submit>"
+        )
+        block_text = await self.console.ainput_block()
+        if block_text is None:
+            return
+        block_text = block_text.strip()
+        if not block_text: return
+        if block_text[0] == "/":
+            return await self.handle_slash_command(block_text)
+        else:
+            self.submit(block_text)
+
     async def _worker(self) -> None:
         """Process queued messages one at a time so that history stays
             strictly ordered, streaming assistant output.
@@ -360,6 +376,7 @@ class ChatHarness:
                     model_name=self.model,
                 )
                 request.stream = stream_response
+                request.options.reasoning_effort = self.effort
 
                 try:
                     response = await self.client.chat(request)
@@ -430,14 +447,15 @@ class ChatHarness:
 
         try:
             async for chunk in stream:
-                thinking = chunk.message.thinking or ""
+                thinking = chunk.message.thinking or None
                 content = chunk.message.content or ""
 
+                if thinking:
+                    thinking_parts.append(thinking)
                 if stream_thinking and thinking:
                     await fsm.input(ResponseEvent.WRITE_THOUGHT)
                     if fsm.current is ResponseState.THINKING:
                         await self.console.write_stream(thinking)
-                        thinking_parts.append(thinking)
 
                 if chunk.message.tool_calls:
                     await fsm.input(ResponseEvent.CALL_TOOL)
@@ -483,13 +501,14 @@ class ChatHarness:
         """Print a non-streaming chat response to the console, returning
             the assistant message.
         """
-        thinking = response.message.thinking or ""
+        thinking = response.message.thinking or None
         content = response.message.content or ""
         tool_calls = response.message.tool_calls or []
 
         lines = [""]
         if thinking and self.show_thinking:
-            lines.append(f"{GREEN}<thought>\n{thinking}\n</thought>{RESET}")
+            lines.append(
+                f"{GREEN}<thought>{RESET}\n{thinking}\n{GREEN}</thought>{RESET}")
             lines.append("")
 
         if content:
@@ -507,30 +526,32 @@ class ChatHarness:
         return Message(
             role=Role.ASSISTANT,
             content=content,
-            thinking=thinking or None,
+            thinking=thinking,
             tool_calls=tool_calls,
         )
 
     async def reprint(self):
+        if self.system:
+            await self.console.write_line(f"{BLUE}[system]{RESET} {self.system}\n")
         for m in self.history:
             if m.role is Role.SYSTEM:
-                await self.console.write_line(f"{BLUE}[system]{RESET} {m.content}")
+                await self.console.write_line(f"{BLUE}[system]{RESET} {m.content}\n")
             elif m.role is Role.USER:
-                await self.console.write_line(f"{CYAN}[user]{RESET} {m.content}")
+                await self.console.write_line(f"{CYAN}[user]{RESET} {m.content}\n")
             elif m.role is Role.ASSISTANT:
                 if m.thinking and self.show_thinking:
                     await self.console.write_line(
                         f"{GREEN}<thought>{RESET}\n{m.thinking}\n"
-                        f"{GREEN}</thought>{RESET}"
+                        f"{GREEN}</thought>{RESET}\n"
                     )
                 if m.content:
                     await self.console.write_line(
-                        f"{GREEN}[assistant]{RESET} {m.content}"
+                        f"{GREEN}[assistant]{RESET} {m.content}\n"
                     )
                 for tc in m.tool_calls or []:
                     await self.console.write_line(
                         f"{YELLOW}<call id={tc.call_id} name={tc.function.name} "
                         f"args={json.dumps(tc.function.arguments)} />{RESET}"
                     )
-            elif m.role is Role.TOOL:
-                await self.console.write_line(f"{YELLOW}[tool]{RESET} {m.content}")
+            elif m.role is Role.TOOL and self.verbose:
+                await self.console.write_line(f"{YELLOW}[tool]{RESET} {m.content}\n")

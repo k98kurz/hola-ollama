@@ -3,7 +3,9 @@ Adapter functions for transforming Message lists into provider-specific
 request formats.
 """
 
-from hola.types import Adapter, ChatRequest, GenerateRequest, Message, Role
+from hola.types import (
+    Adapter, ChatRequest, GenerationOptions, GenerateRequest, Message, Role
+)
 from hola.tools.compat import tools_to_xml
 from hola.tools.types import ToolDefinition
 
@@ -43,6 +45,7 @@ def tool_enabled_chat_adapter(
         tools: list[ToolDefinition] | None = None,
         model_name: str = 'granite4.1:8b',
         rag_cag: str | None = None,
+        options: GenerationOptions | None = None,
     ) -> ChatRequest:
     prelude, rest = _partition_messages(messages)
     system_prompt = phase_instructions + '\n\n'
@@ -65,6 +68,7 @@ def tool_enabled_chat_adapter(
         model=model_name,
         messages=combined_messages,
         tools=tools if tools else None,
+        options=options or GenerationOptions(),
     )
 
 
