@@ -305,9 +305,10 @@ class ChatHarness:
         ) -> None:
         await context["console"].write_stream(f"{GREEN}assistant>{RESET} ")
 
-    def submit(self, text: str) -> None:
+    async def submit(self, text: str) -> None:
         """Queue a user message for the worker."""
         self.queue.put_nowait(Message(role=Role.USER, content=text))
+        await self.console.write_line("\n")
 
     async def run(self) -> None:
         """Read input until `/quit` or EOF. The worker is cancelled
@@ -335,7 +336,7 @@ class ChatHarness:
                     continue
 
                 if line:
-                    self.submit(line)
+                    await self.submit(line)
         finally:
             self._worker_task.cancel()
 
@@ -356,7 +357,7 @@ class ChatHarness:
         if block_text[0] == "/":
             return await self.handle_slash_command(block_text)
         else:
-            self.submit(block_text)
+            await self.submit(block_text)
 
     async def _worker(self) -> None:
         """Process queued messages one at a time so that history stays

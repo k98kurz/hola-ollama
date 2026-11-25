@@ -146,16 +146,6 @@ class Console:
             stdout.flush()
 
             while True:
-                if self._cancel_requested:
-                    self._cancel_requested = False
-                    self._line = ""
-                    self._cursor = 0
-                    stdout.write("^C\n")
-                    stdout.write(self.prompt)
-                    stdout.flush()
-                    self._reset_bookkeeping()
-                    continue
-
                 char = await self._read_char()
 
                 if self._cancel_requested:
@@ -537,7 +527,7 @@ class Console:
         """Replace the current line with the previous or next history
             entry. `direction` is -1 for older and 1 for newer.
         """
-        if not self._history:
+        if not self._history or self._in_block:
             return
 
         index = self._history_index + direction
