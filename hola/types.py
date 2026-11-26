@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
 from hola.errors import validated_dataclass
 from hola.permissions import Permission
-from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
+from hola.tools.types import ToolCall, ToolDefinition
 import packify
 
 

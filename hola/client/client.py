@@ -11,6 +11,7 @@ from hola.client.exceptions import (
     ClientRequestError,
 )
 from hola.errors import type_assert, value_assert
+from hola.stats import extract_stats
 from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
 from hola.types import (
     ChatRequest,
@@ -216,7 +217,7 @@ class BaseClient:
         """Parse an OpenAI-compatible non-streaming chat response."""
         choice = data["choices"][0]
         message = choice["message"]
-        usage = data.get("usage") or {}
+        stats = extract_stats(data)
 
         return ChatResponse(
             model=data.get("model", model),
@@ -233,8 +234,12 @@ class BaseClient:
                 ),
             ),
             done=True,
-            prompt_tokens=usage.get("prompt_tokens"),
-            output_tokens=usage.get("completion_tokens"),
+            total_duration=stats["total_duration"],
+            load_duration=stats["load_duration"],
+            prompt_tokens=stats["prompt_tokens"],
+            prompt_duration=stats["prompt_duration"],
+            output_tokens=stats["output_tokens"],
+            output_duration=stats["output_duration"],
         )
 
     async def generate(
@@ -280,14 +285,18 @@ class BaseClient:
         ) -> GenerateResponse:
         """Parse an OpenAI-compatible non-streaming completion."""
         choice = data["choices"][0]
-        usage = data.get("usage") or {}
+        stats = extract_stats(data)
 
         return GenerateResponse(
             model=data.get("model", model),
             response=choice.get("text") or "",
             done=True,
-            prompt_tokens=usage.get("prompt_tokens"),
-            output_tokens=usage.get("completion_tokens"),
+            total_duration=stats["total_duration"],
+            load_duration=stats["load_duration"],
+            prompt_tokens=stats["prompt_tokens"],
+            prompt_duration=stats["prompt_duration"],
+            output_tokens=stats["output_tokens"],
+            output_duration=stats["output_duration"],
         )
 
     async def close(self) -> None:
@@ -411,7 +420,7 @@ class BaseClient:
             choice = choices[0]
             delta = choice.get("delta") or {}
             finish_reason = choice.get("finish_reason")
-            usage = data.get("usage") or {}
+            stats = extract_stats(data)
             self._accumulate_tool_calls(
                 tool_call_acc, delta.get("tool_calls")
             )
@@ -439,8 +448,12 @@ class BaseClient:
                 ),
                 done=done,
                 done_reason=finish_reason,
-                prompt_tokens=usage.get("prompt_tokens"),
-                output_tokens=usage.get("completion_tokens"),
+                total_duration=stats["total_duration"],
+                load_duration=stats["load_duration"],
+                prompt_tokens=stats["prompt_tokens"],
+                prompt_duration=stats["prompt_duration"],
+                output_tokens=stats["output_tokens"],
+                output_duration=stats["output_duration"],
             )
 
         if not finished:
@@ -581,13 +594,17 @@ class BaseClient:
         """Parse an OpenAI-compatible streaming completion chunk."""
         choice = data["choices"][0]
         finish_reason = choice.get("finish_reason")
-        usage = data.get("usage") or {}
+        stats = extract_stats(data)
 
         return GenerateChunk(
             model=data.get("model", model),
             response=choice.get("text") or "",
             done=finish_reason is not None,
             done_reason=finish_reason,
-            prompt_tokens=usage.get("prompt_tokens"),
-            output_tokens=usage.get("completion_tokens"),
+            total_duration=stats["total_duration"],
+            load_duration=stats["load_duration"],
+            prompt_tokens=stats["prompt_tokens"],
+            prompt_duration=stats["prompt_duration"],
+            output_tokens=stats["output_tokens"],
+            output_duration=stats["output_duration"],
         )

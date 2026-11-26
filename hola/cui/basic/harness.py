@@ -7,6 +7,7 @@ from dataclasses import fields
 from typing import Awaitable, Callable
 from hola.client import BaseClient
 from hola.errors import type_assert, value_assert
+from hola.stats import stats_from_response
 from hola.prompts.adapters import (
     tool_enabled_chat_adapter, xml_workaround_chat_adapter
 )
@@ -566,22 +567,7 @@ class ChatHarness:
                 f"args={json.dumps(tc.function.arguments)} />{RESET}"
             )
 
-        stats = MessageStats(
-            total_duration=response.total_duration or 0,
-            load_duration=response.load_duration or 0,
-            prompt_tokens=response.prompt_tokens or 0,
-            prompt_duration=response.prompt_duration or 0,
-            output_tokens=response.output_tokens or 0,
-            output_duration=response.output_duration or 0,
-        )
-        stats.total_duration /= 1_000_000_000
-        stats.load_duration /= 1_000_000_000
-        stats.prompt_duration /= 1_000_000_000
-        stats.output_duration /= 1_000_000_000
-        if stats.prompt_tokens and stats.prompt_duration:
-            stats.prompt_tps = stats.prompt_tokens / stats.prompt_duration
-        if stats.output_tokens and stats.output_duration:
-            stats.output_tps = stats.output_tokens / stats.output_duration
+        stats = stats_from_response(response)
         if self.show_stats:
             lines.append(f"[stats] {stats}")
 
