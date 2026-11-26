@@ -434,5 +434,67 @@ class TestRetryBehavior(unittest.IsolatedAsyncioTestCase):
         self._assert_elapsed_retries(start)
 
 
+class TestOllamaSerialization(unittest.TestCase):
+    def setUp(self):
+        self.client = OllamaClient(
+            config=ClientConfig(base_url="http://localhost:11435"),
+        )
+
+    def test_chat_reasoning_effort_think_mapping(self):
+        request = ChatRequest(
+            model=NON_THINKING_MODEL,
+            messages=[Message(role=Role.USER, content="test")],
+            stream=False,
+            options=GenerationOptions(reasoning_effort="low"),
+        )
+        data = self.client._serialize_chat_request(request)
+        self.assertEqual(data["think"], "low")
+        self.assertNotIn("reasoning_effort", data.get("options", {}))
+
+    def test_generate_reasoning_effort_think_mapping(self):
+        request = GenerateRequest(
+            model=NON_THINKING_MODEL,
+            prompt="test",
+            stream=False,
+            options=GenerationOptions(reasoning_effort="medium"),
+        )
+        data = self.client._serialize_generate_request(request)
+        self.assertEqual(data["think"], "medium")
+        self.assertNotIn("reasoning_effort", data.get("options", {}))
+
+    def test_chat_no_reasoning_effort_no_think(self):
+        request = ChatRequest(
+            model=NON_THINKING_MODEL,
+            messages=[Message(role=Role.USER, content="test")],
+            stream=False,
+            options=GenerationOptions(),
+        )
+        data = self.client._serialize_chat_request(request)
+        self.assertNotIn("think", data)
+
+    def test_generate_no_reasoning_effort_no_think(self):
+        request = GenerateRequest(
+            model=NON_THINKING_MODEL,
+            prompt="test",
+            stream=False,
+            options=GenerationOptions(),
+        )
+        data = self.client._serialize_generate_request(request)
+        self.assertNotIn("think", data)
+
+    def test_options_grouping_think_not_in_options(self):
+        request = ChatRequest(
+            model=NON_THINKING_MODEL,
+            messages=[Message(role=Role.USER, content="test")],
+            stream=False,
+            options=GenerationOptions(
+                temperature=0.5, seed=7, reasoning_effort="high",
+            ),
+        )
+        data = self.client._serialize_chat_request(request)
+        self.assertEqual(data["think"], "high")
+        self.assertEqual(data["options"], {"temperature": 0.5, "seed": 7})
+
+
 if __name__ == "__main__":
     unittest.main()

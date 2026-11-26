@@ -18,7 +18,7 @@ except ImportError:
     termios, tty = None, None
 
 
-HISTORY_SIZE = 10
+HISTORY_SIZE = 50
 POLL_INTERVAL = 0.01
 ESC_TIMEOUT = 0.01
 
@@ -399,7 +399,7 @@ class Console:
 
     def _wrap_count(self, width: int) -> int:
         """Number of terminal lines required for `width` visual chars."""
-        return (width + self.width - 1) // self.width if width > 0 else 0
+        return (width + self.width - 1) // self.width if width > 0 else 1
 
     def _position_after_width(self, width: int) -> tuple[int, int]:
         """Give the `(row, col)` of the cursor position after writing
@@ -698,9 +698,9 @@ class Console:
         before = self._line[: self._cursor]
         line_index = before.count("\n")
         chunk = before[before.rfind("\n") + 1 :]
-        col = visual_length(chunk)[-1]
+        col = visual_length(chunk)[0]
         if line_index == 0:
-            col += visual_length(self.prompt)[-1]
+            col += visual_length(self.prompt)[0]
         base_row = sum(wraps[:line_index])
         if col == 0:
             cursor_row, cursor_col = base_row, 0
@@ -713,5 +713,8 @@ class Console:
         return total, cursor_row, cursor_col
 
     def _update_cursor(self) -> None:
-        """Resync bookkeeping after the region was fully rewritten."""
+        """Reset caret and resync bookkeeping after the region was fully
+            rewritten.
+        """
+        self._cursor = len(self._line)
         self._lines_used, self._cursor_row, self._cursor_col = self._layout()

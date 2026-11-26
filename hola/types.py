@@ -38,22 +38,22 @@ class Role(Enum):
 
 @validated_dataclass
 class MessageStats:
-    total_duration: int | None = None
-    load_duration: int | None = None
-    prompt_tokens: int | None = None
-    prompt_duration: int | None = None
-    output_tokens: int | None = None
-    output_duration: int | None = None
-    prompt_tps: float | None = None
-    output_tps: float | None = None
+    total_duration: int | float = 0.0
+    load_duration: int | float = 0.0
+    prompt_tokens: int = 0
+    prompt_duration: int | float = 0.0
+    output_tokens: int = 0
+    output_duration: int | float = 0.0
+    prompt_tps: float = 0.0
+    output_tps: float = 0.0
 
     def __repr__(self) -> str:
         return (
             f"total_duration={self.total_duration:.2f} "
             f"load_duration={self.load_duration:.2f} "
-            f"prompt_tokens={self.prompt_tokens:.2f} "
+            f"prompt_tokens={self.prompt_tokens} "
             f"prompt_duration={self.prompt_duration:.2f} "
-            f"output_tokens={self.output_tokens:.2f} "
+            f"output_tokens={self.output_tokens} "
             f"output_duration={self.output_duration:.2f} "
             f"prompt_tps={self.prompt_tps:.2f} "
             f"output_tps={self.output_tps:.2f}"
@@ -302,7 +302,7 @@ class GenerationOptions:
     top_k: int | None = None
     num_predict: int | None = None
     seed: int | None = None
-    reasoning_effort: str | None = None   
+    reasoning_effort: str | None = None
 
 
 @validated_dataclass

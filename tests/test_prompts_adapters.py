@@ -7,7 +7,7 @@ from hola.prompts.adapters import (
     xml_workaround_chat_adapter,
     generate_endpoint_adapter,
 )
-from hola.types import ChatRequest, GenerateRequest, Message, Role
+from hola.types import ChatRequest, GenerateRequest, Message, Role, GenerationOptions
 from hola.tools.types import ToolDefinition
 import unittest
 
@@ -244,6 +244,56 @@ class TestAdapters(unittest.TestCase):
         assert result.prompt == '', repr(result.prompt)
         assert 'Be concise.' in (result.system or '')
         assert 'More.' in (result.system or '')
+
+    # --- explicit generation options ---
+    def test_tool_enabled_options(self):
+        opts = GenerationOptions(
+            temperature=0.3, top_k=40, seed=1, reasoning_effort="medium",
+        )
+        result = tool_enabled_chat_adapter(
+            self.phase_instructions, [self.user_msg], [], options=opts,
+        )
+        assert result.options is not None
+        assert result.options.temperature == 0.3
+        assert result.options.top_k == 40
+        assert result.options.seed == 1
+        assert result.options.reasoning_effort == "medium"
+
+    def test_workaround_options(self):
+        opts = GenerationOptions(
+            temperature=0.2, top_p=0.9, seed=42, reasoning_effort="low",
+        )
+        result = xml_workaround_chat_adapter(
+            self.phase_instructions, [self.user_msg], [], options=opts,
+        )
+        assert result.options is not None
+        assert result.options.temperature == 0.2
+        assert result.options.top_p == 0.9
+        assert result.options.seed == 42
+        assert result.options.reasoning_effort == "low"
+
+    def test_generate_options(self):
+        opts = GenerationOptions(
+            temperature=0.4, top_k=33, seed=99, reasoning_effort="high",
+        )
+        result = generate_endpoint_adapter(
+            self.phase_instructions, [self.user_msg], [], options=opts,
+        )
+        assert result.options is not None
+        assert result.options.temperature == 0.4
+        assert result.options.top_k == 33
+        assert result.options.seed == 99
+        assert result.options.reasoning_effort == "high"
+
+    def test_adapters_default_options_non_null(self):
+        for adapter in (
+            tool_enabled_chat_adapter,
+            xml_workaround_chat_adapter,
+            generate_endpoint_adapter,
+        ):
+            result = adapter(self.phase_instructions, [self.user_msg], [])
+            assert result.options is not None, f'{adapter.__name__} options is None'
+            assert result.options.temperature is None
 
 
 if __name__ == '__main__':

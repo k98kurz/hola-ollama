@@ -78,6 +78,7 @@ def xml_workaround_chat_adapter(
         tools: list[ToolDefinition] | None = None,
         model_name: str = 'granite4.1:8b',
         rag_cag: str | None = None,
+        options: GenerationOptions | None = None,
     ) -> ChatRequest:
     """Transform messages into ChatRequest with XML tool definitions.
         Combines leading system messages into one, includes tool
@@ -99,7 +100,6 @@ def xml_workaround_chat_adapter(
     combined_messages = [Message(
         role=m.role,
         content=m.content,
-        tool_calls=m.tool_calls,
         thinking=m.thinking,
     ) for m in rest]
 
@@ -112,6 +112,7 @@ def xml_workaround_chat_adapter(
         model=model_name,
         messages=combined_messages,
         tools=None,
+        options=options or GenerationOptions(),
     )
 
 
@@ -121,6 +122,7 @@ def generate_endpoint_adapter(
         tools: list[ToolDefinition] | None = None,
         model_name: str = 'granite4.1:8b',
         rag_cag: str | None = None,
+        options: GenerationOptions | None = None,
     ) -> GenerateRequest:
     prelude, rest = _partition_messages(messages)
     system = phase_instructions + '\n\n'
@@ -138,6 +140,7 @@ def generate_endpoint_adapter(
         model=model_name,
         prompt=prompt,
         system=system.strip() if system else None,
+        options=options or GenerationOptions(),
     )
 
 

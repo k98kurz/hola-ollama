@@ -185,6 +185,11 @@ class OllamaClient(BaseClient):
         if request.keep_alive is not None:
             result["keep_alive"] = request.keep_alive
 
+        if  (   request.options is not None
+                and request.options.reasoning_effort is not None
+            ):
+            result["think"] = request.options.reasoning_effort
+
         return result
 
     def _serialize_message(self, message: Message) -> dict:
@@ -241,6 +246,11 @@ class OllamaClient(BaseClient):
 
         if request.keep_alive is not None:
             result["keep_alive"] = request.keep_alive
+
+        if  (   request.options is not None
+                and request.options.reasoning_effort is not None
+            ):
+            result["think"] = request.options.reasoning_effort
 
         return result
 

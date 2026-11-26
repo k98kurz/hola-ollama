@@ -152,6 +152,11 @@ def main() -> None:
         ),
         default=None,
     )
+    chat_parser.add_argument(
+        '--xml',
+        action='store_true',
+        help='Use XML workaround chat adapter'
+    )
 
     # Add subcommands
     subparsers.add_parser(
@@ -216,15 +221,14 @@ def main() -> None:
         host = args.host if args.host is not None else DEFAULT_HOST
         model = args.model if args.model is not None else DEFAULT_MODEL
         show_thinking = not args.no_thinking
-        use_ollama = args.ollama
         tools = resolve_tools_arg(args.tools)
         if args.tools is not None and tools is None:
             return
         try:
             asyncio.run(
                 run_chat(
-                    host, model, args.system, args.api_key,
-                    show_thinking, tools, use_ollama,
+                    host, model, args.system, args.api_key, show_thinking, tools,
+                    use_ollama=args.ollama, use_xml=args.xml
                 )
             )
         except KeyboardInterrupt:

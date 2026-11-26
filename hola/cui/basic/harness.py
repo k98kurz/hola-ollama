@@ -7,7 +7,10 @@ from dataclasses import fields
 from typing import Awaitable, Callable
 from hola.client import BaseClient
 from hola.errors import type_assert, value_assert
-from hola.prompts.adapters import tool_enabled_chat_adapter
+from hola.prompts.adapters import (
+    tool_enabled_chat_adapter, xml_workaround_chat_adapter
+)
+from hola.tools.compat import process_assistant_message
 from hola.tools.core import execute_tool_call
 from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
 from hola.types import (
@@ -37,7 +40,7 @@ class ChatHarness:
             self, client: BaseClient, model: str, console: Console,
             system: str = "", show_thinking: bool = False,
             tools: list[ToolDefinition] | None = None, max_tool_calls: int = 999,
-            session: SessionProtocol | None = None,
+            session: SessionProtocol | None = None, use_xml: bool = False
         ) -> None:
         """Initialize the harness. An optional `system` message is
             placed at the start of the conversation.
@@ -62,6 +65,7 @@ class ChatHarness:
         value_assert(max_tool_calls > 0, "max_tool_calls must be positive")
         self.max_tool_calls = max_tool_calls
         self.session = session
+        self.use_xml = use_xml
         self.verbose = False
         self.response_fsm = ResponseFSM()
         self._register_response_hooks()
@@ -377,12 +381,20 @@ class ChatHarness:
 
             i = 0
             while i < self.max_tool_calls:
-                request = tool_enabled_chat_adapter(
-                    phase_instructions=self.system or "",
-                    messages=list(self.history),
-                    tools=self.tools,
-                    model_name=self.model,
-                )
+                if self.use_xml:
+                    request = xml_workaround_chat_adapter(
+                        phase_instructions=self.system or "",
+                        messages=list(self.history),
+                        tools=self.tools,
+                        model_name=self.model,
+                    )
+                else:
+                    request = tool_enabled_chat_adapter(
+                        phase_instructions=self.system or "",
+                        messages=list(self.history),
+                        tools=self.tools,
+                        model_name=self.model,
+                    )
                 request.stream = stream_response
                 request.options.reasoning_effort = self.effort
 
@@ -471,7 +483,7 @@ class ChatHarness:
                     if fsm.current is ResponseState.THINKING:
                         await self.console.write_stream(thinking)
 
-                if chunk.message.tool_calls:
+                if chunk.message.tool_calls and not self.use_xml:
                     await fsm.input(ResponseEvent.CALL_TOOL)
                     tool_calls = chunk.message.tool_calls
 
@@ -513,12 +525,15 @@ class ChatHarness:
             stats.output_tps = stats.output_tokens / stats.output_duration
 
         thinking = "".join(thinking_parts) or None
+        content = "".join(content_parts)
+        if self.use_xml:
+            content, tool_calls = process_assistant_message(content, self.tools)
         if self.show_stats and stats:
             await self.console.write_line(f"[stats] {stats}\n")
 
         return Message(
             role=Role.ASSISTANT,
-            content="".join(content_parts),
+            content=content,
             thinking=thinking,
             tool_calls=tool_calls,
             stats=stats,
@@ -530,7 +545,10 @@ class ChatHarness:
         """
         thinking = response.message.thinking or None
         content = response.message.content or ""
-        tool_calls = response.message.tool_calls or []
+        if self.use_xml:
+            content, tool_calls = process_assistant_message(content, self.tools)
+        else:
+            tool_calls = response.message.tool_calls or []
 
         lines = [""]
         if thinking and self.show_thinking:

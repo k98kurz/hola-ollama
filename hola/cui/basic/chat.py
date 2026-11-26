@@ -22,7 +22,7 @@ async def run_chat(
         host: str, model: str, system: str | None = None,
         api_key: str | None = None, show_thinking: bool = True,
         tools: list[ToolDefinition] | None = None,
-        use_ollama: bool = False,
+        use_ollama: bool = False, use_xml: bool = False,
     ) -> None:
     """Run the chat harness until input ends."""
     config = ClientConfig(
@@ -32,8 +32,7 @@ async def run_chat(
     console = Console(DEFAULT_PROMPT)
     harness = ChatHarness(
         client, model, console, system, show_thinking, max_tool_calls=999,
-        tools=tools,
-        session=Session(DEFAULT_SESSION, True),
+        tools=tools, session=Session(DEFAULT_SESSION, True), use_xml=use_xml,
     )
     try:
         await harness.run()
