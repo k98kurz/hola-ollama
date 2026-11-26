@@ -7,7 +7,6 @@ from dataclasses import fields
 from typing import Awaitable, Callable
 from hola.client import BaseClient
 from hola.errors import type_assert, value_assert
-from hola.stats import stats_from_response
 from hola.prompts.adapters import (
     tool_enabled_chat_adapter, xml_workaround_chat_adapter
 )
@@ -15,7 +14,7 @@ from hola.tools.compat import process_assistant_message
 from hola.tools.core import execute_tool_call
 from hola.tools.types import ToolCall, ToolCallFunction, ToolDefinition
 from hola.types import (
-    ChatResponse, ChatResponseChunk, Message, MessageStats, Role, SessionProtocol
+    ChatResponse, ChatResponseChunk, Message, ResponseStats, Role, SessionProtocol
 )
 import asyncio
 import contextlib
@@ -466,16 +465,13 @@ class ChatHarness:
         fsm.context["console"] = self.console
         fsm.context["stream_thinking"] = stream_thinking
         fsm.reset()
-        stat_fields = [f.name for f in fields(MessageStats)]
+        stats = ResponseStats()
 
         try:
-            stats = MessageStats(*[0 for _ in range(len(stat_fields))])
             async for chunk in stream:
                 thinking = chunk.message.thinking or None
                 content = chunk.message.content or ""
-                for f in stat_fields:
-                    if getattr(chunk, f, None):
-                        setattr(stats, f, getattr(stats, f) + getattr(chunk, f))
+                stats += chunk.stats
 
                 if thinking:
                     thinking_parts.append(thinking)
@@ -516,10 +512,6 @@ class ChatHarness:
             await fsm.input(ResponseEvent.END_RESPONSE)
             await self.console.write_stream("", done=True)
 
-        stats.total_duration /= 1_000_000_000
-        stats.load_duration /= 1_000_000_000
-        stats.prompt_duration /= 1_000_000_000
-        stats.output_duration /= 1_000_000_000
         if stats.prompt_tokens and stats.prompt_duration:
             stats.prompt_tps = stats.prompt_tokens / stats.prompt_duration
         if stats.output_tokens and stats.output_duration:
@@ -530,7 +522,7 @@ class ChatHarness:
         if self.use_xml:
             content, tool_calls = process_assistant_message(content, self.tools)
         if self.show_stats and stats:
-            await self.console.write_line(f"[stats] {stats}\n")
+            await self.console.write_stream(f"[stats] {stats}", done=True)
 
         return Message(
             role=Role.ASSISTANT,
@@ -567,9 +559,9 @@ class ChatHarness:
                 f"args={json.dumps(tc.function.arguments)} />{RESET}"
             )
 
-        stats = stats_from_response(response)
+        stats = response.stats
         if self.show_stats:
-            lines.append(f"[stats] {stats}")
+            lines.append(f"[stats] {stats}\n")
 
         await self.console.write_line("\n".join(lines))
 

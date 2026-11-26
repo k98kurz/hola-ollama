@@ -12,6 +12,7 @@ from hola.ollama.exceptions import (
     OllamaRequestError,
 )
 from hola.ollama.types import RunningModel
+from hola.stats import extract_stats
 from hola.tools.types import ToolCall, ToolCallFunction
 from hola.types import (
     ChatRequest,
@@ -273,12 +274,7 @@ class OllamaClient(BaseClient):
                 thinking=message.get("thinking"),
             ),
             done=data["done"],
-            total_duration=data.get("total_duration"),
-            load_duration=data.get("load_duration"),
-            prompt_tokens=data.get("prompt_eval_count"),
-            prompt_duration=data.get("prompt_eval_duration"),
-            output_tokens=data.get("eval_count"),
-            output_duration=data.get("eval_duration"),
+            stats=extract_stats(data, 1_000_000_000),
         )
 
     def _parse_generate_response(
@@ -290,12 +286,7 @@ class OllamaClient(BaseClient):
             response=data["response"],
             done=data["done"],
             thinking=data.get("thinking"),
-            total_duration=data.get("total_duration"),
-            load_duration=data.get("load_duration"),
-            prompt_tokens=data.get("prompt_eval_count"),
-            prompt_duration=data.get("prompt_eval_duration"),
-            output_tokens=data.get("eval_count"),
-            output_duration=data.get("eval_duration"),
+            stats=extract_stats(data, 1_000_000_000),
         )
 
     async def _parse_sse_stream(
@@ -325,12 +316,7 @@ class OllamaClient(BaseClient):
             ),
             done=data["done"],
             done_reason=data.get("done_reason"),
-            total_duration=data.get("total_duration"),
-            load_duration=data.get("load_duration"),
-            prompt_tokens=data.get("prompt_eval_count"),
-            prompt_duration=data.get("prompt_eval_duration"),
-            output_tokens=data.get("eval_count"),
-            output_duration=data.get("eval_duration"),
+            stats=extract_stats(data, 1_000_000_000),
         )
 
     def _parse_tool_calls(
@@ -367,10 +353,5 @@ class OllamaClient(BaseClient):
             done=data["done"],
             thinking=data.get("thinking"),
             done_reason=data.get("done_reason"),
-            total_duration=data.get("total_duration"),
-            load_duration=data.get("load_duration"),
-            prompt_tokens=data.get("prompt_eval_count"),
-            prompt_duration=data.get("prompt_eval_duration"),
-            output_tokens=data.get("eval_count"),
-            output_duration=data.get("eval_duration"),
+            stats=extract_stats(data, 1_000_000_000),
         )

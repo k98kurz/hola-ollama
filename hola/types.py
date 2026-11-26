@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
-from hola.errors import validated_dataclass
+from hola.errors import validated_dataclass, type_assert
 from hola.permissions import Permission
 from hola.tools.types import ToolCall, ToolDefinition
 import packify
@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    'Role', 'MessageStats', 'Message', 'TokenEstimatable', 'SessionProtocol',
-    'ChatResponseChunk', 'ChatResponse',
+    'Role', 'ResponseStats', 'Message', 'TokenEstimatable', 'SessionProtocol',
+    'ResponseStats', 'ChatResponseChunk', 'ChatResponse',
     'ModelInfo', 'ModelMetadata',
     'GenerateChunk', 'GenerateResponse', 'GenerationOptions',
     'ChatRequest', 'GenerateRequest',
@@ -37,7 +37,7 @@ class Role(Enum):
 
 
 @validated_dataclass
-class MessageStats:
+class ResponseStats:
     total_duration: int | float = 0.0
     load_duration: int | float = 0.0
     prompt_tokens: int = 0
@@ -59,6 +59,22 @@ class MessageStats:
             f"output_tps={self.output_tps:.2f}"
         )
 
+    def __add__(self, other: ResponseStats) -> ResponseStats:
+        type_assert(
+            isinstance(other, ResponseStats),
+            f'unsupported type for ResponseStats + {type(other)}'
+        )
+        return ResponseStats(
+            self.total_duration + other.total_duration,
+            self.load_duration + other.load_duration,
+            self.prompt_tokens + other.prompt_tokens,
+            self.prompt_duration + other.prompt_duration,
+            self.output_tokens + other.output_tokens,
+            self.output_duration + other.output_duration,
+            self.prompt_tps or other.prompt_tps,
+            self.output_tps or other.output_tps,
+        )
+
 
 @validated_dataclass
 class Message:
@@ -74,7 +90,7 @@ class Message:
     is_compaction: bool = False
     compacted_by: str | None = None
     call_id: str | None = None
-    stats: MessageStats | None = None
+    stats: ResponseStats | None = None
 
     def extra_context_chars(self) -> int:
         return len(packify.pack(self.tool_calls))
@@ -227,12 +243,7 @@ class ChatResponseChunk:
     message: Message
     done: bool
     done_reason: str | None = None
-    total_duration: int | None = None
-    load_duration: int | None = None
-    prompt_tokens: int | None = None
-    prompt_duration: int | None = None
-    output_tokens: int | None = None
-    output_duration: int | None = None
+    stats: ResponseStats | None = None
 
 
 @validated_dataclass
@@ -240,12 +251,7 @@ class ChatResponse:
     model: str
     message: Message
     done: bool
-    total_duration: int | None = None
-    load_duration: int | None = None
-    prompt_tokens: int | None = None
-    prompt_duration: int | None = None
-    output_tokens: int | None = None
-    output_duration: int | None = None
+    stats: ResponseStats | None = None
 
 
 @validated_dataclass
@@ -273,12 +279,7 @@ class GenerateChunk:
     done: bool
     thinking: str | None = None
     done_reason: str | None = None
-    total_duration: int | None = None
-    load_duration: int | None = None
-    prompt_tokens: int | None = None
-    prompt_duration: int | None = None
-    output_tokens: int | None = None
-    output_duration: int | None = None
+    stats: ResponseStats | None = None
 
 
 @validated_dataclass
@@ -287,12 +288,7 @@ class GenerateResponse:
     response: str
     done: bool
     thinking: str | None = None
-    total_duration: int | None = None
-    load_duration: int | None = None
-    prompt_tokens: int | None = None
-    prompt_duration: int | None = None
-    output_tokens: int | None = None
-    output_duration: int | None = None
+    stats: ResponseStats | None = None
 
 
 @validated_dataclass

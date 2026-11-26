@@ -328,7 +328,7 @@ class Console:
         stdout.write(MOVE_TO_LINE_START + CLEAR_ENTIRE_LINE + CR)
 
         # then just fucking print the goddamn text
-        stdout.write(text.strip() + "\n")
+        stdout.write(text + "\n")
 
         # then fucking print the fucking prompt
         stdout.write(self.prompt)
@@ -341,7 +341,7 @@ class Console:
 
     async def write_stream(self, text: str, done: bool = False) -> None:
         """Write part of a stream of text. Expecting a token stream from
-            an LLM, not chunks of multiple tokens.
+            an LLM.
         """
         if not self._active:
             stdout.write(text)
@@ -386,6 +386,7 @@ class Console:
 
         # print an extra newline when fucking done
         if done:
+            self._stream_line = ""
             stdout.write("\n")
 
         # then fucking print the fucking prompt

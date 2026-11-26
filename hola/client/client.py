@@ -217,7 +217,6 @@ class BaseClient:
         """Parse an OpenAI-compatible non-streaming chat response."""
         choice = data["choices"][0]
         message = choice["message"]
-        stats = extract_stats(data)
 
         return ChatResponse(
             model=data.get("model", model),
@@ -234,12 +233,7 @@ class BaseClient:
                 ),
             ),
             done=True,
-            total_duration=stats["total_duration"],
-            load_duration=stats["load_duration"],
-            prompt_tokens=stats["prompt_tokens"],
-            prompt_duration=stats["prompt_duration"],
-            output_tokens=stats["output_tokens"],
-            output_duration=stats["output_duration"],
+            stats=extract_stats(data, 1000)
         )
 
     async def generate(
@@ -285,18 +279,12 @@ class BaseClient:
         ) -> GenerateResponse:
         """Parse an OpenAI-compatible non-streaming completion."""
         choice = data["choices"][0]
-        stats = extract_stats(data)
 
         return GenerateResponse(
             model=data.get("model", model),
             response=choice.get("text") or "",
             done=True,
-            total_duration=stats["total_duration"],
-            load_duration=stats["load_duration"],
-            prompt_tokens=stats["prompt_tokens"],
-            prompt_duration=stats["prompt_duration"],
-            output_tokens=stats["output_tokens"],
-            output_duration=stats["output_duration"],
+            stats=extract_stats(data, 1000)
         )
 
     async def close(self) -> None:
@@ -420,7 +408,6 @@ class BaseClient:
             choice = choices[0]
             delta = choice.get("delta") or {}
             finish_reason = choice.get("finish_reason")
-            stats = extract_stats(data)
             self._accumulate_tool_calls(
                 tool_call_acc, delta.get("tool_calls")
             )
@@ -448,12 +435,7 @@ class BaseClient:
                 ),
                 done=done,
                 done_reason=finish_reason,
-                total_duration=stats["total_duration"],
-                load_duration=stats["load_duration"],
-                prompt_tokens=stats["prompt_tokens"],
-                prompt_duration=stats["prompt_duration"],
-                output_tokens=stats["output_tokens"],
-                output_duration=stats["output_duration"],
+                stats=extract_stats(data, 1000)
             )
 
         if not finished:
@@ -594,17 +576,11 @@ class BaseClient:
         """Parse an OpenAI-compatible streaming completion chunk."""
         choice = data["choices"][0]
         finish_reason = choice.get("finish_reason")
-        stats = extract_stats(data)
 
         return GenerateChunk(
             model=data.get("model", model),
             response=choice.get("text") or "",
             done=finish_reason is not None,
             done_reason=finish_reason,
-            total_duration=stats["total_duration"],
-            load_duration=stats["load_duration"],
-            prompt_tokens=stats["prompt_tokens"],
-            prompt_duration=stats["prompt_duration"],
-            output_tokens=stats["output_tokens"],
-            output_duration=stats["output_duration"],
+            stats=extract_stats(data, 1000)
         )
